@@ -6,26 +6,26 @@ from typing import TYPE_CHECKING
 from numpy import array, zeros, matmul, subtract
 from numpy.linalg import solve
 
-from PyNitePrenguin.Node3D import Node3D
-from PyNitePrenguin.Material import Material
-from PyNitePrenguin.Section import Section, SteelSection
-from PyNitePrenguin.PhysMember import PhysMember
-from PyNitePrenguin.Spring3D import Spring3D
-from PyNitePrenguin.ZeroLength import ZeroLength
-from PyNitePrenguin.MultiPointConstraint import MultiPointConstraint, EqualDOF, EqualDOFMixed
-from PyNitePrenguin.Member3D import Member3D
-from PyNitePrenguin.Quad3D import Quad3D
-from PyNitePrenguin.Plate3D import Plate3D
-from PyNitePrenguin.LoadCombo import LoadCombo
-from PyNitePrenguin.Mesh import Mesh, RectangleMesh, AnnulusMesh, FrustrumMesh, CylinderMesh
-from PyNitePrenguin import Analysis
+from Pynite.Node3D import Node3D
+from Pynite.Material import Material
+from Pynite.Section import Section, SteelSection
+from Pynite.PhysMember import PhysMember
+from Pynite.Spring3D import Spring3D
+from Pynite.ZeroLength import ZeroLength
+from Pynite.MultiPointConstraint import MultiPointConstraint, EqualDOF, EqualDOFMixed
+from Pynite.Member3D import Member3D
+from Pynite.Quad3D import Quad3D
+from Pynite.Plate3D import Plate3D
+from Pynite.LoadCombo import LoadCombo
+from Pynite.Mesh import Mesh, RectangleMesh, AnnulusMesh, FrustrumMesh, CylinderMesh
+from Pynite import Analysis
 
 if TYPE_CHECKING:
     from typing import Dict, List
     from numpy import float64
     from numpy.typing import NDArray
-    from PyNitePrenguin.UniaxialMaterial import UniaxialMaterial
-    from PyNitePrenguin.ZeroLength import ZeroLength
+    from Pynite.UniaxialMaterial import UniaxialMaterial
+    from Pynite.ZeroLength import ZeroLength
 
 
 # %%

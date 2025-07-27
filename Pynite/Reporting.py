@@ -6,7 +6,7 @@ from jinja2 import Environment, PackageLoader
 import pdfkit
 
 if TYPE_CHECKING:
-    from PyNitePrenguin import FEModel3D
+    from Pynite import FEModel3D
 
 # Determine the filepath to the local Pynite installation
 from pathlib import Path

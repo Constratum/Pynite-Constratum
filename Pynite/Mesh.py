@@ -2,13 +2,13 @@ from __future__ import annotations # Allows more recent type hints features
 from typing import TYPE_CHECKING
 from math import pi, sin, cos, ceil, isclose
 
-from PyNitePrenguin.Node3D import Node3D
-from PyNitePrenguin.Quad3D import Quad3D
-from PyNitePrenguin.Plate3D import Plate3D
+from Pynite.Node3D import Node3D
+from Pynite.Quad3D import Quad3D
+from Pynite.Plate3D import Plate3D
 
 if TYPE_CHECKING:
     from typing import List, Union, Dict
-    from PyNitePrenguin.FEModel3D import FEModel3D
+    from Pynite.FEModel3D import FEModel3D
 
 #%%
 class Mesh():

@@ -2,7 +2,7 @@
 # loads. Units used for the model in this example are inches and kips.
 
 # Import `FEModel3D` from `Pynite`
-from PyNitePrenguin import FEModel3D
+from Pynite import FEModel3D
 
 # Create a new finite element model
 braced_frame = FEModel3D()
@@ -133,7 +133,7 @@ braced_frame.analyze()
 
 # Display the deformed shape of the structure magnified 50 times with the text
 # height 5 model units (inches) high.
-from PyNitePrenguin.Rendering import Renderer
+from Pynite.Rendering import Renderer
 rndr = Renderer(braced_frame)
 rndr.annotation_size = 5
 rndr.deformed_shape = True

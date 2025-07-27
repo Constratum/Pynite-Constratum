@@ -4,8 +4,8 @@ from numpy import zeros, array
 from typing import TYPE_CHECKING, List, Dict
 
 if TYPE_CHECKING:
-    from PyNitePrenguin.Node3D import Node3D
-    from PyNitePrenguin.LoadCombo import LoadCombo
+    from Pynite.Node3D import Node3D
+    from Pynite.LoadCombo import LoadCombo
 
 
 # %%

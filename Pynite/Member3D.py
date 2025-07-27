@@ -6,9 +6,9 @@ from numpy import array, zeros, add, subtract, matmul, insert, cross, divide, co
 from numpy import linspace, vstack, hstack, allclose, radians, sin, cos
 from numpy.linalg import inv, pinv
 
-import PyNitePrenguin.FixedEndReactions
-from PyNitePrenguin.BeamSegZ import BeamSegZ
-from PyNitePrenguin.BeamSegY import BeamSegY
+import Pynite.FixedEndReactions
+from Pynite.BeamSegZ import BeamSegZ
+from Pynite.BeamSegY import BeamSegY
 
 if TYPE_CHECKING:
 
@@ -17,11 +17,11 @@ if TYPE_CHECKING:
     from numpy import float64
     from numpy.typing import NDArray
 
-    from PyNitePrenguin.FEModel3D import FEModel3D
-    from PyNitePrenguin.Node3D import Node3D
-    from PyNitePrenguin.Material import Material
-    from PyNitePrenguin.Section import Section
-    from PyNitePrenguin.LoadCombo import LoadCombo
+    from Pynite.FEModel3D import FEModel3D
+    from Pynite.Node3D import Node3D
+    from Pynite.Material import Material
+    from Pynite.Section import Section
+    from Pynite.LoadCombo import LoadCombo
 
 class Member3D:
     """

@@ -6,7 +6,7 @@
 # in the final results are expected.
 
 # Import a few libraries from Pynite that we'll need
-from PyNitePrenguin.FEModel3D import FEModel3D
+from Pynite.FEModel3D import FEModel3D
 from math import isclose
 
 # Create a finite element model
@@ -84,7 +84,7 @@ model.analyze(log=True, check_statics=True)
 # window = render_model(model, annotation_size=1, render_loads=True, deformed_shape=True,
 #                       deformed_scale=200, color_map='Txy', scalar_bar=False,
 #                       combo_name='Seismic', labels=False, screenshot='console')
-from PyNitePrenguin.Rendering import Renderer
+from Pynite.Rendering import Renderer
 renderer = Renderer(model)
 renderer.combo_name = 'Seismic'
 renderer.color_map = 'Txy'

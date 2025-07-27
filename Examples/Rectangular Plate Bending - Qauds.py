@@ -17,7 +17,7 @@ mesh_size = 1  # ft
 load = 250  # psf
 
 # Create a finite element model
-from PyNitePrenguin import FEModel3D
+from Pynite import FEModel3D
 model = FEModel3D()
 
 # Define concrete in the model
@@ -54,7 +54,7 @@ model.analyze(check_statics=True)
 # +-----------------------+
 
 # Set up a renderer for the wall. The quad mesh will be set to show 'Mx' results.
-from PyNitePrenguin.Rendering import Renderer
+from Pynite.Rendering import Renderer
 renderer = Renderer(model)
 renderer.annotation_size = mesh_size/6
 renderer.deformed_shape = False

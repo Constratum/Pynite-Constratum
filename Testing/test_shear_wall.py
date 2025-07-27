@@ -6,9 +6,9 @@ Copyright (c) 2022 D. Craig Brinck, SE; tamalone1
 """
 
 import unittest
-from PyNitePrenguin import FEModel3D
-from PyNitePrenguin.Mesh import CylinderMesh, RectangleMesh
-from PyNitePrenguin.Rendering import Renderer
+from Pynite import FEModel3D
+from Pynite.Mesh import CylinderMesh, RectangleMesh
+from Pynite.Rendering import Renderer
 import sys
 from io import StringIO
 from math import isclose

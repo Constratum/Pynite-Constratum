@@ -11,10 +11,10 @@ import math
 # For type checking only - these imports are only used during type checking
 if TYPE_CHECKING:
     from typing import List, Union, Tuple, Optional
-    from PyNitePrenguin.Node3D import Node3D
-    from PyNitePrenguin.Member3D import Member3D
-    from PyNitePrenguin.Spring3D import Spring3D
-    from PyNitePrenguin.FEModel3D import FEModel3D
+    from Pynite.Node3D import Node3D
+    from Pynite.Member3D import Member3D
+    from Pynite.Spring3D import Spring3D
+    from Pynite.FEModel3D import FEModel3D
 
 # Allow for 3D interaction within jupyter notebook using trame
 try:

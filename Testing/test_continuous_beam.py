@@ -1,4 +1,4 @@
-from PyNitePrenguin import FEModel3D
+from Pynite import FEModel3D
 import math
 # import matplotlib, matplotlib.pyplot as plt
 

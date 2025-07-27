@@ -5,11 +5,11 @@ from math import isclose
 from numpy import array, atleast_2d, zeros, subtract, matmul, divide, seterr, nanmax
 from numpy.linalg import solve
 
-from PyNitePrenguin.LoadCombo import LoadCombo
+from Pynite.LoadCombo import LoadCombo
 
 if TYPE_CHECKING:
     from typing import List, Tuple
-    from PyNitePrenguin.FEModel3D import FEModel3D
+    from Pynite.FEModel3D import FEModel3D
     from numpy import float64
     from numpy.typing import NDArray
     from scipy.sparse import lil_matrix

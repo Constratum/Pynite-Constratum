@@ -3,16 +3,16 @@ from __future__ import annotations # Allows more recent type hints features
 from numpy import zeros, array, add, subtract, matmul, insert, cross, divide
 from numpy.linalg import inv
 from math import isclose
-import PyNitePrenguin.FixedEndReactions
-from PyNitePrenguin.LoadCombo import LoadCombo
+import Pynite.FixedEndReactions
+from Pynite.LoadCombo import LoadCombo
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import Dict, Optional, Union
     from numpy import float64
     from numpy.typing import NDArray
-    from PyNitePrenguin.Node3D import Node3D
-    from PyNitePrenguin.UniaxialMaterial import UniaxialMaterial
+    from Pynite.Node3D import Node3D
+    from Pynite.UniaxialMaterial import UniaxialMaterial
 
 # %%
 class Spring3D:

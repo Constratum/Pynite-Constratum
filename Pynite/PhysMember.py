@@ -1,12 +1,12 @@
 from __future__ import annotations # Allows more recent type hints features
 from typing import Dict, List, Literal, Tuple, TYPE_CHECKING
-from PyNitePrenguin.Member3D import Member3D
+from Pynite.Member3D import Member3D
 from math import isclose
 
 if TYPE_CHECKING:
 
-    from PyNitePrenguin.Node3D import Node3D
-    from PyNitePrenguin.FEModel3D import FEModel3D
+    from Pynite.Node3D import Node3D
+    from Pynite.FEModel3D import FEModel3D
     import numpy.typing as npt
     from numpy import float64
     from numpy.typing import NDArray

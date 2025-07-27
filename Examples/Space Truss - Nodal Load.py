@@ -4,8 +4,8 @@
 # Units for this model are meters and kilonewtons
 
 # Import 'FEModel3D' and 'Rendering' from 'Pynite'
-from PyNitePrenguin import FEModel3D
-from PyNitePrenguin.Rendering import Renderer
+from Pynite import FEModel3D
+from Pynite.Rendering import Renderer
 
 # Create a new model
 truss = FEModel3D()

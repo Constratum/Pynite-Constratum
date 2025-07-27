@@ -6,8 +6,8 @@ from numpy.linalg import inv, norm, det
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
-    from PyNitePrenguin.Node3D import Node3D
-    from PyNitePrenguin.FEModel3D import FEModel3D
+    from Pynite.Node3D import Node3D
+    from Pynite.FEModel3D import FEModel3D
 
 #%%
 class Tri3D():

@@ -1,7 +1,7 @@
 
 import unittest
-from PyNitePrenguin import FEModel3D
-from PyNitePrenguin.VTKWriter import VTKWriter
+from Pynite import FEModel3D
+from Pynite.VTKWriter import VTKWriter
 import sys, tempfile
 from io import StringIO
 

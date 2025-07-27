@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from numpy import float64
     from numpy.typing import NDArray
-    from PyNitePrenguin.FEModel3D import FEModel3D
+    from Pynite.FEModel3D import FEModel3D
 
 class Section():
     """

@@ -7,8 +7,8 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from numpy import float64
-    from PyNitePrenguin.FEModel3D import FEModel3D
-    from PyNitePrenguin.Node3D import Node3D
+    from Pynite.FEModel3D import FEModel3D
+    from Pynite.Node3D import Node3D
 
 # %%
 class Plate3D:

@@ -8,7 +8,7 @@ Copyright (c) 2020 D. Craig Brinck, SE; tamalone1
 import unittest
 
 from numpy import True_
-from PyNitePrenguin import FEModel3D
+from Pynite import FEModel3D
 import sys
 from io import StringIO
 

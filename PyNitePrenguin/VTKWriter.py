@@ -17,7 +17,7 @@ from scipy.interpolate import RegularGridInterpolator
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Dict, Tuple, List
-    from Pynite.FEModel3D import FEModel3D, Member3D
+    from PyNitePrenguin.FEModel3D import FEModel3D, Member3D
 
 class VTKWriter:
     """

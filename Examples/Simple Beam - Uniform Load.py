@@ -3,7 +3,7 @@
 # This example does not use load combinations. The program will create a default load combindation called 'Combo 1'
 
 # Import `FEModel3D` from `Pynite`
-from Pynite import FEModel3D
+from PyNitePrenguin import FEModel3D
 
 # Create a new finite element model
 simple_beam = FEModel3D()
@@ -49,7 +49,7 @@ print('Left Support Reaction:', simple_beam.nodes['N1'].RxnFY, 'kip')
 print('Right Support Reacton:', simple_beam.nodes['N2'].RxnFY, 'kip')
 
 # Render the deformed shape of the beam magnified 100 times, with a text height of 5 inches
-from Pynite.Rendering import Renderer
+from PyNitePrenguin.Rendering import Renderer
 renderer = Renderer(simple_beam)
 renderer.annotation_size = 6
 renderer.deformed_shape = True

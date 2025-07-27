@@ -1,4 +1,4 @@
-from Pynite import FEModel3D
+from PyNitePrenguin import FEModel3D
 import math
 
 def test_beam_internal_forces():

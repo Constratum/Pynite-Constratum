@@ -5,7 +5,7 @@ MIT License
 Copyright (c) 2020 D. Craig Brinck, SE; tamalone1
 """
 
-from Pynite import FEModel3D
+from PyNitePrenguin import FEModel3D
 import math
 
 def test_plate_displacement():
@@ -191,7 +191,7 @@ def test_circular_hopper():
     # Solve the model
     model.analyze_linear()
 
-    from Pynite.Visualization import Renderer
+    from PyNitePrenguin.Visualization import Renderer
     rndr = Renderer(model)
     rndr.annotation_size = 0.25
     rndr.color_map = 'Sy'

@@ -11,7 +11,7 @@ Example 13.14
 """
 
 import unittest
-from Pynite import FEModel3D
+from PyNitePrenguin import FEModel3D
 import math
 import sys
 from io import StringIO

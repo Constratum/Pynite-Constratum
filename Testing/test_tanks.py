@@ -1,4 +1,4 @@
-from Pynite import FEModel3D
+from PyNitePrenguin import FEModel3D
     
 def test_PCA_7_quad():
     """

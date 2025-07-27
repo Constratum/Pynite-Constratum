@@ -1,6 +1,6 @@
 from math import pi
-from Pynite.FEModel3D import FEModel3D
-from Pynite.Mesh import FrustrumMesh, CylinderMesh
+from PyNitePrenguin.FEModel3D import FEModel3D
+from PyNitePrenguin.Mesh import FrustrumMesh, CylinderMesh
 
 t = 0.25/12
 E = 29000*1000*12**2
@@ -69,7 +69,7 @@ model.add_load_combo('1.4F', {'Hydrostatic': 1.4})
 model.analyze()
 
 # Render the model. Labels and loads will be turned off to speed up interaction.
-from Pynite.Visualization import Renderer
+from PyNitePrenguin.Visualization import Renderer
 rndr = Renderer(model)
 rndr.annotation_size = 0.1
 rndr.render_loads = False

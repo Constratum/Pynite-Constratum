@@ -2,7 +2,7 @@ from __future__ import annotations # Allows more recent type hints features
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from Pynite.FEModel3D import FEModel3D
+    from PyNitePrenguin.FEModel3D import FEModel3D
 
 class Material():
     """

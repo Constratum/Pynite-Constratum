@@ -4,7 +4,7 @@ from numpy import average
 import io
 from typing import TYPE_CHECKING
 
-from Pynite.FEModel3D import FEModel3D
+from PyNitePrenguin.FEModel3D import FEModel3D
 from prettytable import PrettyTable
 
 import matplotlib.pyplot as plt
@@ -12,7 +12,7 @@ from matplotlib.patches import Rectangle
 
 if TYPE_CHECKING:
     from typing import List, Dict, Tuple
-    from Pynite.Quad3D import Quad3D
+    from PyNitePrenguin.Quad3D import Quad3D
     import matplotlib.figure
 
 
@@ -721,7 +721,7 @@ class ShearWall():
 
     def render(self, color_map: str = 'Txy', combo_name: str = 'Combo 1') -> None:
         
-        from Pynite.Visualization import Renderer
+        from PyNitePrenguin.Visualization import Renderer
         renderer = Renderer(self.model)
         renderer.annotation_size = 0.25
         renderer.render_loads = True
@@ -735,7 +735,7 @@ class ShearWall():
 
     def screenshots(self, combo_name: str = 'Combo 1', dir_path: str = './') -> None:
 
-        from Pynite.Rendering import Renderer
+        from PyNitePrenguin.Rendering import Renderer
         
         renderer = Renderer(self.model)
         renderer.window_width = 750

@@ -1,4 +1,4 @@
-from Pynite.BeamSegZ import BeamSegZ
+from PyNitePrenguin.BeamSegZ import BeamSegZ
 
 
 # %%

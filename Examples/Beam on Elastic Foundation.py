@@ -5,7 +5,7 @@ in this model are expressed in terms of kips (force) and inches (length).
 """
 
 # Create a new model for the beam
-from Pynite import FEModel3D
+from PyNitePrenguin import FEModel3D
 boef = FEModel3D()
 
 # Assign the length of the beam
@@ -67,7 +67,7 @@ else:
 boef.analyze(log=True, check_statics=True)
 
 # Render the mdoel with the deformed shape using Pynite's buit-in renderer
-from Pynite.Rendering import Renderer
+from PyNitePrenguin.Rendering import Renderer
 renderer = Renderer(boef)
 renderer.annotation_size = 1.5
 renderer.deformed_shape = True

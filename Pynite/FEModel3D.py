@@ -3540,30 +3540,37 @@ class FEModel3D:
 
                     # Determine seismic mass factor for this load case
                     # Common practice: Dead loads = 1.0, Live loads = 0.6 for seismic
+                    case_upper = case.strip().upper()
                     is_dead_load = (
                         "dead" in case.lower()
                         or "dl" in case.lower()
                         or "self" in case.lower()
+                        or case_upper == "G"
                     )
                     is_live_load = (
                         "live" in case.lower()
                         or "ll" in case.lower()
                         or "pallet" in case.lower()
+                        or case_upper == "Q"
+                        or case_upper == "MODAL MASS"
                     )
 
                     if is_dead_load:
-                        mass_factor = 1.0  # Dead loads contribute fully to seismic mass
+                        # Dead loads fully contribute to mass, but can be skipped to avoid double counting
+                        mass_factor = 1.0
                         if not include_dead_load_mass:
-                            # Skip dead load mass to avoid double counting with member mass matrices
                             if log:
                                 print(
                                     f"    Skipping dead load mass (already in member mass matrices)"
                                 )
                             continue
                     elif is_live_load:
-                        mass_factor = seismic_load_factor  # Live loads contribute partially (typically 0.6)
+                        # Treat live load case 'Q' (or equivalents) as already scaled upstream
+                        # via add_modal_masses; do not reduce again here
+                        mass_factor = 1.0
                     else:
-                        mass_factor = seismic_load_factor  # Default to seismic factor for other loads
+                        # For any other cases, fall back to provided seismic factor
+                        mass_factor = seismic_load_factor
 
                     # Add lumped masses from nodal loads
                     for node in self.nodes.values():
@@ -3582,7 +3589,7 @@ class FEModel3D:
                                     # Add to specified translational DOFs only (horizontal seismic by default)
                                     node_id = node.ID
                                     if node_id is not None:
-                                        # Add mass only to specified DOF for seismic analysis
+                                        # Add full mass to each specified DOF for seismic analysis
                                         if "X" in seismic_dof:
                                             M[
                                                 node_id * 6 + 0, node_id * 6 + 0
@@ -3601,7 +3608,7 @@ class FEModel3D:
                                         if log:
                                             dof_str = ", ".join(seismic_dof)
                                             print(
-                                                f"    Added {lumped_mass:.3f} kg seismic mass to node {node.name} ({dof_str} DOF)"
+                                                f"    Added {lumped_mass:.3f} kg seismic mass to node {node.name} in each DOF ({dof_str})"
                                             )
 
                 if log:
@@ -3718,30 +3725,36 @@ class FEModel3D:
 
                     # Determine seismic mass factor for this load case
                     # Common practice: Dead loads = 1.0, Live loads = 0.6 for seismic
+                    case_upper = case.strip().upper()
                     is_dead_load = (
                         "dead" in case.lower()
                         or "dl" in case.lower()
                         or "self" in case.lower()
+                        or case_upper == "G"
                     )
                     is_live_load = (
                         "live" in case.lower()
                         or "ll" in case.lower()
                         or "pallet" in case.lower()
+                        or case_upper == "Q"
                     )
 
                     if is_dead_load:
-                        mass_factor = 1.0  # Dead loads contribute fully to seismic mass
+                        # Dead loads fully contribute to mass, but can be skipped to avoid double counting
+                        mass_factor = 1.0
                         if not include_dead_load_mass:
-                            # Skip dead load mass to avoid double counting with member mass matrices
                             if log:
                                 print(
                                     f"    Skipping dead load mass (already in member mass matrices)"
                                 )
                             continue
                     elif is_live_load:
-                        mass_factor = seismic_load_factor  # Live loads contribute partially (typically 0.6)
+                        # Treat live load case 'Q' (or equivalents) as already scaled upstream
+                        # via add_modal_masses; do not reduce again here
+                        mass_factor = 1.0
                     else:
-                        mass_factor = seismic_load_factor  # Default to seismic factor for other loads
+                        # For any other cases, fall back to provided seismic factor
+                        mass_factor = seismic_load_factor
 
                     # Add lumped masses from nodal loads
                     for node in self.nodes.values():
@@ -3760,7 +3773,7 @@ class FEModel3D:
                                     # Add to specified translational DOFs only (horizontal seismic by default)
                                     node_id = node.ID
                                     if node_id is not None:
-                                        # Add mass only to specified DOF for seismic analysis
+                                        # Add full mass to each specified DOF for seismic analysis
                                         if "X" in seismic_dof:
                                             M[
                                                 node_id * 6 + 0, node_id * 6 + 0
@@ -3779,7 +3792,7 @@ class FEModel3D:
                                         if log:
                                             dof_str = ", ".join(seismic_dof)
                                             print(
-                                                f"    Added {lumped_mass:.3f} kg seismic mass to node {node.name} ({dof_str} DOF)"
+                                                f"    Added {lumped_mass:.3f} kg seismic mass to node {node.name} in each DOF ({dof_str})"
                                             )
 
                 if log:
@@ -3792,6 +3805,60 @@ class FEModel3D:
                         f"  WARNING: Only nodal loads are processed. Distributed member/plate loads are ignored."
                     )
 
+        # PHASE 3: ENHANCE MASS MATRIX - Include spring and zero-length element masses
+        if log:
+            print("- PHASE 3: Adding spring mass contributions to mass matrix")
+
+        spring_mass_added = 0
+        zla_mass_added = 0
+
+        # Add mass from springs (if they have mass properties)
+        for spring in self.springs.values():
+            if hasattr(spring, "mass") and spring.mass > 0:
+                # Distribute spring mass to connected nodes
+                i_node_id = spring.i_node.ID
+                j_node_id = spring.j_node.ID
+                mass_per_node = spring.mass / 2.0
+
+                # Add mass to translational DOFs (springs typically affect translation)
+                for dof in [0, 1, 2]:  # DX, DY, DZ
+                    if sparse:
+                        M[i_node_id * 6 + dof, i_node_id * 6 + dof] += mass_per_node
+                        M[j_node_id * 6 + dof, j_node_id * 6 + dof] += mass_per_node
+                    else:
+                        M[i_node_id * 6 + dof, i_node_id * 6 + dof] += mass_per_node
+                        M[j_node_id * 6 + dof, j_node_id * 6 + dof] += mass_per_node
+
+                spring_mass_added += 1
+
+        # Add mass from zero-length elements (if they have mass)
+        for zla in self.zero_length.values():
+            # Estimate mass based on connected nodes (simplified approach)
+            # In practice, zero-length elements might have their own mass properties
+            if hasattr(zla, "mass") and zla.mass > 0:
+                i_node_id = zla.i_node.ID
+                j_node_id = zla.j_node.ID
+                mass_per_node = zla.mass / 2.0
+
+                for dof in [0, 1, 2]:  # DX, DY, DZ
+                    if sparse:
+                        M[i_node_id * 6 + dof, i_node_id * 6 + dof] += mass_per_node
+                        M[j_node_id * 6 + dof, j_node_id * 6 + dof] += mass_per_node
+                    else:
+                        M[i_node_id * 6 + dof, i_node_id * 6 + dof] += mass_per_node
+                        M[j_node_id * 6 + dof, j_node_id * 6 + dof] += mass_per_node
+
+                zla_mass_added += 1
+
+        if log:
+            if spring_mass_added > 0:
+                print(f"  ✓ Added mass from {spring_mass_added} springs")
+            if zla_mass_added > 0:
+                print(f"  ✓ Added mass from {zla_mass_added} zero-length elements")
+            if spring_mass_added == 0 and zla_mass_added == 0:
+                print("  ℹ️  No additional spring masses found")
+            print("  ✅ PHASE 3: Mass matrix enhanced with spring contributions")
+
         if log:
             print("Global mass matrix assembled successfully!")
 
@@ -3803,6 +3870,7 @@ class FEModel3D:
         combo_name="Combo 1",
         log=False,
         sparse=True,
+        seismic_dof=["X", "Y", "Z"],
     ):
         """Perform modal analysis (eigenvalue analysis) on the model.
 
@@ -3814,6 +3882,8 @@ class FEModel3D:
         :type log: bool, optional
         :param sparse: Use sparse matrix operations. Defaults to True.
         :type sparse: bool, optional
+        :param seismic_dof: List of DOF directions to add seismic mass to. Defaults to ["X", "Y", "Z"].
+        :type seismic_dof: list, optional
         :return: Dictionary containing eigenvalues, frequencies, periods, and mode shapes.
         :rtype: dict
         """
@@ -3877,12 +3947,298 @@ class FEModel3D:
             print("- Assembling global stiffness matrix")
         K = self.K(combo_name=combo_name, log=log, sparse=sparse, check_stability=False)
 
+        # PHASE 2: FIX MODAL ANALYSIS BUG - Include support springs in modal analysis
+        # Support springs (def_support_spring) are NOT included in K() method for modal analysis
+        # This is a bug in PyNite - we need to manually add them
+        if log:
+            print("- PHASE 2: Adding support spring stiffness to modal analysis")
+
+        # Add support spring contributions to stiffness matrix for modal analysis
+        # OPTIMIZED: Accumulate all springs first, then apply in batch
+        support_springs_added = 0
+        all_support_springs = []
+
+        for node in self.nodes.values():
+            node_id = node.ID
+
+            # Check each DOF for support springs
+            if (
+                hasattr(node, "spring_DX")
+                and node.spring_DX
+                and node.spring_DX[0] is not None
+                and node.spring_DX[2]
+            ):
+                all_support_springs.append((node_id * 6 + 0, node.spring_DX[0]))
+                support_springs_added += 1
+            if (
+                hasattr(node, "spring_DY")
+                and node.spring_DY
+                and node.spring_DY[0] is not None
+                and node.spring_DY[2]
+            ):
+                all_support_springs.append((node_id * 6 + 1, node.spring_DY[0]))
+                support_springs_added += 1
+            if (
+                hasattr(node, "spring_DZ")
+                and node.spring_DZ
+                and node.spring_DZ[0] is not None
+                and node.spring_DZ[2]
+            ):
+                all_support_springs.append((node_id * 6 + 2, node.spring_DZ[0]))
+                support_springs_added += 1
+            if (
+                hasattr(node, "spring_RX")
+                and node.spring_RX
+                and node.spring_RX[0] is not None
+                and node.spring_RX[2]
+            ):
+                all_support_springs.append((node_id * 6 + 3, node.spring_RX[0]))
+                support_springs_added += 1
+            if (
+                hasattr(node, "spring_RY")
+                and node.spring_RY
+                and node.spring_RY[0] is not None
+                and node.spring_RY[2]
+            ):
+                all_support_springs.append((node_id * 6 + 4, node.spring_RY[0]))
+                support_springs_added += 1
+            if (
+                hasattr(node, "spring_RZ")
+                and node.spring_RZ
+                and node.spring_RZ[0] is not None
+                and node.spring_RZ[2]
+            ):
+                all_support_springs.append((node_id * 6 + 5, node.spring_RZ[0]))
+                support_springs_added += 1
+
+        # Add all springs to stiffness matrix in one efficient batch
+        if support_springs_added > 0:
+            if sparse and hasattr(K, "toarray"):
+                # Convert to lil_matrix for efficient modification
+                from scipy.sparse import lil_matrix
+
+                K = K.tolil()
+
+            for dof_idx, stiffness in all_support_springs:
+                K[dof_idx, dof_idx] += stiffness
+
+            # Convert back to csr_matrix
+            if sparse and hasattr(K, "tocsr"):
+                from scipy.sparse import csr_matrix
+
+                K = K.tocsr()
+
+        if log and support_springs_added > 0:
+            print(
+                f"  ✓ Added {support_springs_added} support springs to modal stiffness matrix"
+            )
+            print("  ✅ PHASE 2: Support springs now affect modal periods")
+        elif log:
+            print(
+                "  ℹ️  No support springs found (using zero-length elements or fixed supports)"
+            )
+
+        # PHASE 3: FIX MODAL ANALYSIS BUG - Include regular springs and zero-length elements
+        # Regular springs (add_spring) and zero-length elements are NOT included in K() method
+        # This is a critical bug in PyNite - we need to manually add their stiffness contributions
+        if log:
+            print(
+                "- PHASE 3: Adding regular springs and zero-length elements to modal analysis"
+            )
+            print(
+                f"  Found {len(self.springs)} springs and {len(self.zero_length)} zero-length elements"
+            )
+            print(f"  Springs: {[s.name for s in self.springs.values()]}")
+            print(f"  Zero-length: {[zl.name for zl in self.zero_length.values()]}")
+
+        # Add regular spring contributions to stiffness matrix
+        # OPTIMIZED: Convert to lil_matrix first for efficient modification
+        regular_springs_added = 0
+
+        if sparse and hasattr(K, "toarray") and len(self.springs) > 0:
+            # Convert to lil_matrix for efficient modification
+            from scipy.sparse import lil_matrix
+
+            K = K.tolil()
+
+        for spring in self.springs.values():
+            if log:
+                i_node_name = spring.i_node.name
+                j_node_name = spring.j_node.name
+                print(
+                    f"  Checking spring {spring.name}: {i_node_name} ↔ {j_node_name}, active={spring.active.get(combo_name, False)}"
+                )
+            if spring.active[combo_name]:
+                if log:
+                    print(
+                        f"    Adding spring {spring.name} (type: {spring.spring_type})"
+                    )
+                try:
+                    # Get spring's stiffness matrix contribution
+                    # FIXED: Use K() without combo_name for modal analysis (matches regular K() method)
+                    spring_K = spring.K()
+
+                    # Get node IDs for DOF mapping
+                    i_node_id = spring.i_node.ID
+                    j_node_id = spring.j_node.ID
+
+                    # Map 12x12 spring stiffness to global DOF indices
+                    # Spring DOFs: [DX1, DY1, DZ1, RX1, RY1, RZ1, DX2, DY2, DZ2, RX2, RY2, RZ2]
+                    global_dofs = [
+                        i_node_id * 6 + 0,
+                        i_node_id * 6 + 1,
+                        i_node_id * 6 + 2,  # DX1, DY1, DZ1
+                        i_node_id * 6 + 3,
+                        i_node_id * 6 + 4,
+                        i_node_id * 6 + 5,  # RX1, RY1, RZ1
+                        j_node_id * 6 + 0,
+                        j_node_id * 6 + 1,
+                        j_node_id * 6 + 2,  # DX2, DY2, DZ2
+                        j_node_id * 6 + 3,
+                        j_node_id * 6 + 4,
+                        j_node_id * 6 + 5,  # RX2, RY2, RZ2
+                    ]
+
+                    # Add spring stiffness to global matrix
+                    max_stiffness_added = 0
+                    non_zero_entries = 0
+                    for i in range(12):
+                        for j in range(12):
+                            global_i = global_dofs[i]
+                            global_j = global_dofs[j]
+                            stiffness_value = spring_K[i, j]
+
+                            if (
+                                abs(stiffness_value) > 1e-10
+                            ):  # Only add significant values
+                                non_zero_entries += 1
+                                if abs(stiffness_value) > max_stiffness_added:
+                                    max_stiffness_added = abs(stiffness_value)
+
+                                # Debug: show which DOFs are being affected
+                                if (
+                                    log
+                                    and abs(stiffness_value) > max_stiffness_added * 0.1
+                                ):
+                                    print(
+                                        f"      Adding {stiffness_value:.2e} to K[{global_i},{global_j}]"
+                                    )
+
+                                # Now directly modify K (lil_matrix is efficient for this)
+                                K[global_i, global_j] += stiffness_value
+
+                    if log:
+                        print(
+                            f"    Added spring {spring.name}: max stiffness = {max_stiffness_added:.2e}, {non_zero_entries} non-zero entries"
+                        )
+                    regular_springs_added += 1
+
+                except Exception as e:
+                    if log:
+                        print(
+                            f"  Warning: Could not add spring {spring.name}: {str(e)}"
+                        )
+
+        # Convert back to csr_matrix if we modified as lil_matrix
+        if sparse and regular_springs_added > 0 and hasattr(K, "tocsr"):
+            from scipy.sparse import csr_matrix
+
+            K = K.tocsr()
+
+        # Add zero-length element contributions to stiffness matrix
+        # OPTIMIZED: Accumulate all modifications first, then apply once
+        zero_length_added = 0
+
+        if sparse and hasattr(K, "toarray"):
+            # Convert to lil_matrix for efficient modification
+            from scipy.sparse import lil_matrix
+
+            K = K.tolil()
+
+        for zl_element in self.zero_length.values():
+            try:
+                # Debug: Show which zero-length elements are being processed
+                if zl_element.name.startswith("BasePlate"):
+                    print(f"    Processing baseplate zero-length: {zl_element.name}")
+
+                # Get zero-length element's stiffness matrix contribution
+                # FIXED: Use K() without combo_name for modal analysis (matches regular K() method)
+                zl_K = zl_element.K()
+
+                # Get node IDs for DOF mapping
+                i_node_id = zl_element.i_node.ID
+                j_node_id = zl_element.j_node.ID
+
+                # Map 12x12 zero-length stiffness to global DOF indices
+                # Zero-length DOFs: same as spring DOFs
+                global_dofs = [
+                    i_node_id * 6 + 0,
+                    i_node_id * 6 + 1,
+                    i_node_id * 6 + 2,  # DX1, DY1, DZ1
+                    i_node_id * 6 + 3,
+                    i_node_id * 6 + 4,
+                    i_node_id * 6 + 5,  # RX1, RY1, RZ1
+                    j_node_id * 6 + 0,
+                    j_node_id * 6 + 1,
+                    j_node_id * 6 + 2,  # DX2, DY2, DZ2
+                    j_node_id * 6 + 3,
+                    j_node_id * 6 + 4,
+                    j_node_id * 6 + 5,  # RX2, RY2, RZ2
+                ]
+
+                # Add zero-length stiffness to global matrix
+                for i in range(12):
+                    for j in range(12):
+                        global_i = global_dofs[i]
+                        global_j = global_dofs[j]
+                        stiffness_value = zl_K[i, j]
+
+                        # Debug baseplate elements
+                        if (
+                            zl_element.name.startswith("BasePlate")
+                            and abs(stiffness_value) > 1e-6
+                        ):
+                            print(
+                                f"      BasePlate {zl_element.name}: K[{global_i},{global_j}] += {stiffness_value:.2e}"
+                            )
+
+                        # Now directly modify K (lil_matrix is efficient for this)
+                        K[global_i, global_j] += stiffness_value
+
+                zero_length_added += 1
+
+            except Exception as e:
+                if log:
+                    print(
+                        f"  Warning: Could not add zero-length element {zl_element.name}: {str(e)}"
+                    )
+
+        # Convert back to csr_matrix for efficient solve operations
+        if sparse and hasattr(K, "tocsr"):
+            from scipy.sparse import csr_matrix
+
+            K = K.tocsr()
+
+        if log and (regular_springs_added > 0 or zero_length_added > 0):
+            print(
+                f"  ✓ Added {regular_springs_added} regular springs to modal stiffness matrix"
+            )
+            print(
+                f"  ✓ Added {zero_length_added} zero-length elements to modal stiffness matrix"
+            )
+            print(
+                "  ✅ PHASE 3: Springs and zero-length elements now affect modal periods"
+            )
+        elif log:
+            print("  ℹ️  No regular springs or zero-length elements found")
+
         if log:
             print("- Assembling global mass matrix")
         M = self.M(
             combo_name=combo_name,
             log=log,
             sparse=sparse,
+            seismic_dof=seismic_dof,
         )
 
         # Remove constrained degrees of freedom (supports)

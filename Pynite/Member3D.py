@@ -161,6 +161,35 @@ class Member3D():
         :rtype: ndarray
         """
 
+        # Zero-length members (rigid links and connection elements) have no geometry to
+        # condense. Return a penalty stiffness that ties the two nodes together instead.
+        if isclose(self.L(), 0.0, abs_tol=1e-10):
+
+            E = self.material.E
+
+            # Moderate stiffness values chosen to tie the nodes together without wrecking the
+            # conditioning of the global stiffness matrix
+            rigid_stiffness = 1e6*E
+            rotational_stiffness = 1e3*E
+
+            ke_rigid = zeros((12, 12))
+
+            # Translational DOFs
+            for i in range(3):
+                ke_rigid[i, i] = rigid_stiffness
+                ke_rigid[i, i + 6] = -rigid_stiffness
+                ke_rigid[i + 6, i] = -rigid_stiffness
+                ke_rigid[i + 6, i + 6] = rigid_stiffness
+
+            # Rotational DOFs
+            for i in range(3, 6):
+                ke_rigid[i, i] = rotational_stiffness
+                ke_rigid[i, i + 6] = -rotational_stiffness
+                ke_rigid[i + 6, i] = -rotational_stiffness
+                ke_rigid[i + 6, i + 6] = rotational_stiffness
+
+            return ke_rigid
+
         # Partition the local stiffness matrix as 4 submatrices in
         # preparation for static condensation
         ke11, ke12, ke21, ke22 = self._partition(self._ke_unc())
@@ -198,6 +227,32 @@ class Member3D():
         J = self.section.J
         A = self.section.A
         L = self.L()
+
+        # Zero-length members (rigid links and connection elements) have no length to form the
+        # usual beam terms from. Use a diagonal penalty stiffness instead, which also avoids the
+        # numerical trouble static condensation would run into here.
+        if isclose(L, 0.0, abs_tol=1e-10):
+
+            rigid_stiffness = 1e8*E
+
+            ke = zeros((12, 12))
+
+            # Translational DOFs
+            for i, term in enumerate((rigid_stiffness, rigid_stiffness, rigid_stiffness)):
+                ke[i, i] = term
+                ke[i, i + 6] = -term
+                ke[i + 6, i] = -term
+                ke[i + 6, i + 6] = term
+
+            # Rotational DOFs, scaled by the section properties
+            for i, term in enumerate((rigid_stiffness*J/A, rigid_stiffness*Iy/A,
+                                      rigid_stiffness*Iz/A), start=3):
+                ke[i, i] = term
+                ke[i, i + 6] = -term
+                ke[i + 6, i] = -term
+                ke[i + 6, i + 6] = term
+
+            return ke
 
         # Create the uncondensed local stiffness matrix
         ke = array([[A*E/L,  0,             0,             0,      0,            0,            -A*E/L, 0,             0,             0,      0,            0           ],
@@ -967,6 +1022,20 @@ class Member3D():
 
         # Calculate the length of the member
         L = self.L()
+
+        # Zero-length members (rigid links and connection elements) have no axis to derive an
+        # orientation from, so the local axes are taken as parallel to the global axes.
+        if isclose(L, 0.0, abs_tol=1e-10):
+
+            dirCos = array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+
+            transMatrix = zeros((12, 12))
+            transMatrix[0:3, 0:3] = dirCos
+            transMatrix[3:6, 3:6] = dirCos
+            transMatrix[6:9, 6:9] = dirCos
+            transMatrix[9:12, 9:12] = dirCos
+
+            return transMatrix
 
         # Calculate the direction cosines for the local x-axis
         x = [(Xj - Xi)/L, (Yj - Yi)/L, (Zj - Zi)/L]

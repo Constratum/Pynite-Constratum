@@ -19,12 +19,15 @@ from Pynite.LoadCombo import LoadCombo
 from Pynite.Mesh import Mesh, RectangleMesh, AnnulusMesh, FrustrumMesh, CylinderMesh
 from Pynite.ShearWall import ShearWall
 from Pynite.MatFoundation import MatFoundation
+from Pynite.ZeroLength import ZeroLength
+from Pynite.MultiPointConstraint import MultiPointConstraint, EqualDOF, EqualDOFMixed
 from Pynite import Analysis
 
 if TYPE_CHECKING:
     from typing import Dict, List
     from numpy import float64
     from numpy.typing import NDArray
+    from Pynite.UniaxialMaterial import UniaxialMaterial
 
 
 # %%
@@ -45,6 +48,9 @@ class FEModel3D():
         self.materials: Dict[str, Material] = {}       # A dictionary of the model's materials
         self.sections: Dict[str, Section] = {}         # A dictonary of the model's cross-sections
         self.springs: Dict[str, Spring3D] = {}         # A dictionary of the model's springs
+        self.zero_length: Dict[str, ZeroLength] = {}   # A dictionary of the model's zero-length elements
+        self.constraints: Dict[str, MultiPointConstraint] = {}  # A dictionary of the model's multi-point constraints
+        self.uniaxial_materials: Dict[str, UniaxialMaterial] = {}  # A dictionary of the model's uniaxial materials (nonlinear springs)
         self.members: Dict[str, PhysMember] = {}       # A dictionary of the model's physical members
         self.quads: Dict[str, Quad3D] = {}             # A dictionary of the model's quadiralterals
         self.plates: Dict[str, Plate3D] = {}           # A dictionary of the model's rectangular plates
@@ -304,6 +310,39 @@ class FEModel3D():
         # Return the materal name
         return name
 
+    def add_uniaxial_material(self, name: str, material: UniaxialMaterial) -> str:
+        """Adds a new uniaxial material to the model for use with nonlinear springs.
+
+        :param name: A unique user-defined name for the uniaxial material.
+        :type name: str
+        :param material: The uniaxial material object.
+        :type material: UniaxialMaterial
+        :raises NameError: Occurs when the specified name already exists in the model.
+        :return: The name of the uniaxial material added to the model.
+        :rtype: str
+        """
+
+        # Name the material or check it doesn't already exist
+        if name:
+            if name in self.uniaxial_materials:
+                raise NameError(f"Uniaxial material name '{name}' already exists")
+        else:
+            # As a guess, start with the length of the dictionary
+            name = 'UM' + str(len(self.uniaxial_materials))
+            count = 1
+            while name in self.uniaxial_materials:
+                name = 'UM' + str(len(self.uniaxial_materials) + count)
+                count += 1
+
+        # Add the new uniaxial material to the model
+        self.uniaxial_materials[name] = material
+
+        # Flag the model as unsolved
+        self.solution = None
+
+        # Return the material name
+        return name
+
     def add_section(self, name: str, A: float, Iy: float, Iz: float, J: float) -> str:
         """Adds a cross-section to the model.
 
@@ -427,6 +466,222 @@ class FEModel3D():
         self.solution = None
 
         # Return the spring name
+        return name
+
+    def add_nonlinear_spring(self, name: str, i_node: str, j_node: str, material_name: str, tension_only: bool = False, comp_only: bool = False, spring_type: str = 'axial') -> str:
+        """Adds a new nonlinear spring to the model using a uniaxial material.
+
+        :param name: A unique user-defined name for the spring. If ``None`` or ``""``, a name will be automatically assigned
+        :type name: str
+        :param i_node: The name of the i-node (start node).
+        :type i_node: str
+        :param j_node: The name of the j-node (end node).
+        :type j_node: str
+        :param material_name: The name of the uniaxial material for the spring.
+        :type material_name: str
+        :param tension_only: Indicates if the spring is tension-only, defaults to False
+        :type tension_only: bool, optional
+        :param comp_only: Indicates if the spring is compression-only, defaults to False
+        :type comp_only: bool, optional
+        :param spring_type: Type of spring - 'axial' or 'rotational_z', defaults to 'axial'
+        :type spring_type: str, optional
+        :raises NameError: Occurs when the specified name already exists in the model.
+        :return: The name of the spring that was added to the model.
+        :rtype: str
+        """
+
+        # Name the spring or check it doesn't already exist
+        if name:
+            if name in self.springs:
+                raise NameError(f"Spring name '{name}' already exists")
+        else:
+            # As a guess, start with the length of the dictionary
+            name = 'S' + str(len(self.springs))
+            count = 1
+            while name in self.springs:
+                name = 'S' + str(len(self.springs) + count)
+                count += 1
+
+        # Lookup node names and safely handle exceptions
+        try:
+            pn_nodes = [self.nodes[node_name] for node_name in (i_node, j_node)]
+        except KeyError as e:
+            raise NameError(f"Node '{e.args[0]}' does not exist in the model")
+
+        # Lookup material and safely handle exceptions
+        try:
+            material = self.uniaxial_materials[material_name]
+        except KeyError:
+            raise NameError(f"Uniaxial material '{material_name}' does not exist in the model")
+
+        # Create a new nonlinear spring
+        new_spring = Spring3D(name, pn_nodes[0], pn_nodes[1],
+                              material, self.load_combos, tension_only=tension_only,
+                              comp_only=comp_only, spring_type=spring_type)
+
+        # Add the new spring to the model
+        self.springs[name] = new_spring
+
+        # Flag the model as unsolved
+        self.solution = None
+
+        # Return the spring name
+        return name
+
+    def add_zero_length(self, name: str, i_node: str, j_node: str, material_names: List[str], directions: List[int], x_vector: List[float] = [1.0, 0.0, 0.0], y_vector: List[float] = [0.0, 1.0, 0.0]) -> str:
+        """Adds a new zero-length element to the model.
+
+        :param name: A unique user-defined name for the element. If ``None`` or ``""``, a name will be automatically assigned
+        :type name: str
+        :param i_node: The name of the i-node (start node).
+        :type i_node: str
+        :param j_node: The name of the j-node (end node).
+        :type j_node: str
+        :param material_names: List of names of uniaxial materials for the element.
+        :type material_names: List[str]
+        :param directions: List of directions for each material (0-5: 0,1,2=trans x,y,z; 3,4,5=rot x,y,z).
+        :type directions: List[int]
+        :param x_vector: Local x-axis direction vector, defaults to [1.0, 0.0, 0.0]
+        :type x_vector: List[float], optional
+        :param y_vector: Local y-axis direction vector (in x-y plane), defaults to [0.0, 1.0, 0.0]
+        :type y_vector: List[float], optional
+        :raises NameError: Occurs when the specified name already exists in the model.
+        :return: The name of the zero-length element that was added to the model.
+        :rtype: str
+        """
+
+        # Name the element or check it doesn't already exist
+        if name:
+            if name in self.zero_length:
+                raise NameError(f"Zero-length element name '{name}' already exists")
+        else:
+            # As a guess, start with the length of the dictionary
+            name = 'ZL' + str(len(self.zero_length))
+            count = 1
+            while name in self.zero_length:
+                name = 'ZL' + str(len(self.zero_length) + count)
+                count += 1
+
+        # Lookup node names and safely handle exceptions
+        try:
+            pn_nodes = [self.nodes[node_name] for node_name in (i_node, j_node)]
+        except KeyError as e:
+            raise NameError(f"Node '{e.args[0]}' does not exist in the model")
+
+        # Lookup materials and safely handle exceptions
+        try:
+            materials = [self.uniaxial_materials[mat_name] for mat_name in material_names]
+        except KeyError as e:
+            raise NameError(f"Uniaxial material '{e.args[0]}' does not exist in the model")
+
+        # Create a new zero-length element
+        new_zero_length = ZeroLength(name, pn_nodes[0], pn_nodes[1], materials,
+                                     directions, self.load_combos, x_vector, y_vector)
+
+        # Add the new zero-length element to the model
+        self.zero_length[name] = new_zero_length
+
+        # Flag the model as unsolved
+        self.solution = None
+
+        # Return the element name
+        return name
+
+    def add_equal_dof(self, name: str, retained_node: str, constrained_node: str, dofs: List[int]) -> str:
+        """Adds an equal DOF constraint between two nodes.
+
+        :param name: A unique user-defined name for the constraint. If ``None`` or ``""``, a name will be automatically assigned
+        :type name: str
+        :param retained_node: The name of the node that retains its DOF (independent).
+        :type retained_node: str
+        :param constrained_node: The name of the node whose DOF will be constrained (dependent).
+        :type constrained_node: str
+        :param dofs: List of DOF indices to be made equal (0-5: 0,1,2=DX,DY,DZ; 3,4,5=RX,RY,RZ).
+        :type dofs: List[int]
+        :raises NameError: Occurs when the specified name already exists in the model.
+        :return: The name of the constraint that was added to the model.
+        :rtype: str
+        """
+
+        # Name the constraint or check it doesn't already exist
+        if name:
+            if name in self.constraints:
+                raise NameError(f"Constraint name '{name}' already exists")
+        else:
+            # As a guess, start with the length of the dictionary
+            name = 'EQ' + str(len(self.constraints))
+            count = 1
+            while name in self.constraints:
+                name = 'EQ' + str(len(self.constraints) + count)
+                count += 1
+
+        # Lookup node names and safely handle exceptions
+        try:
+            retained_node_obj = self.nodes[retained_node]
+            constrained_node_obj = self.nodes[constrained_node]
+        except KeyError as e:
+            raise NameError(f"Node '{e.args[0]}' does not exist in the model")
+
+        # Create a new equal DOF constraint
+        new_constraint = EqualDOF(name, retained_node_obj, constrained_node_obj, dofs)
+
+        # Add the new constraint to the model
+        self.constraints[name] = new_constraint
+
+        # Flag the model as unsolved
+        self.solution = None
+
+        # Return the constraint name
+        return name
+
+    def add_equal_dof_mixed(self, name: str, retained_node: str, constrained_node: str, constrained_dofs: List[int], retained_dofs: List[int]) -> str:
+        """Adds a mixed equal DOF constraint between two nodes.
+
+        :param name: A unique user-defined name for the constraint. If ``None`` or ``""``, a name will be automatically assigned
+        :type name: str
+        :param retained_node: The name of the node that retains its DOF (independent).
+        :type retained_node: str
+        :param constrained_node: The name of the node whose DOF will be constrained (dependent).
+        :type constrained_node: str
+        :param constrained_dofs: List of DOF indices for constrained node (0-5).
+        :type constrained_dofs: List[int]
+        :param retained_dofs: List of DOF indices for retained node (0-5).
+        :type retained_dofs: List[int]
+        :raises NameError: Occurs when the specified name already exists in the model.
+        :return: The name of the constraint that was added to the model.
+        :rtype: str
+        """
+
+        # Name the constraint or check it doesn't already exist
+        if name:
+            if name in self.constraints:
+                raise NameError(f"Constraint name '{name}' already exists")
+        else:
+            # As a guess, start with the length of the dictionary
+            name = 'EQM' + str(len(self.constraints))
+            count = 1
+            while name in self.constraints:
+                name = 'EQM' + str(len(self.constraints) + count)
+                count += 1
+
+        # Lookup node names and safely handle exceptions
+        try:
+            retained_node_obj = self.nodes[retained_node]
+            constrained_node_obj = self.nodes[constrained_node]
+        except KeyError as e:
+            raise NameError(f"Node '{e.args[0]}' does not exist in the model")
+
+        # Create a new mixed equal DOF constraint
+        new_constraint = EqualDOFMixed(name, retained_node_obj, constrained_node_obj,
+                                       constrained_dofs, retained_dofs)
+
+        # Add the new constraint to the model
+        self.constraints[name] = new_constraint
+
+        # Flag the model as unsolved
+        self.solution = None
+
+        # Return the constraint name
         return name
 
     def add_member(self, name: str, i_node: str, j_node: str, material_name: str, section_name: str, rotation: float = 0.0, tension_only: bool = False, comp_only: bool = False) -> str:
@@ -1709,6 +1964,24 @@ class FEModel3D():
                     # Add the spring block directly to the dense global matrix.
                     self._add_dense_block(Ke, dofs, spring_Ke)
 
+        # Add stiffness terms for each zero-length element in the model
+        if log: print('- Adding zero-length element stiffness terms to global stiffness matrix')
+        for zero_length in self.zero_length.values():
+
+            if zero_length.active.get(combo_name, True) == True:
+
+                # Capture the full set of i/j DOF indices for this zero-length element.
+                dofs = self._build_dof_vector(zero_length.i_node, zero_length.j_node)
+                # Grab the element's already-transformed global stiffness matrix.
+                zero_length_Ke = zero_length.Ke()
+
+                if sparse == True:
+                    # Convert the zero-length block into sparse row/col/data pieces.
+                    self._append_sparse_block(dofs, zero_length_Ke, row_parts, col_parts, data_parts)
+                else:
+                    # Add the zero-length block directly to the dense global matrix.
+                    self._add_dense_block(Ke, dofs, zero_length_Ke)
+
         # Add stiffness terms for each physical member in the model
         if log: print('- Adding member stiffness terms to global stiffness matrix')
         for phys_member in self.members.values():
@@ -1789,6 +2062,28 @@ class FEModel3D():
 
             # Build the sparse COO matrix from the assembled vectors.
             Ke = sp.sparse.coo_matrix((data, (row, col)), shape=(len(self.nodes)*6, len(self.nodes)*6))
+
+        # Apply multi-point constraints
+        if len(self.constraints) > 0:
+
+            if log: print('- Applying multi-point constraints')
+
+            # Constraint application operates on a dense matrix
+            if sparse: Ke_dense = Ke.toarray()
+            else: Ke_dense = Ke
+
+            # Create a dummy load vector for constraint application. The constraint objects
+            # condense the load vector alongside the stiffness matrix, but the real load vector
+            # is condensed separately at solve time, so the result is discarded here.
+            P_dummy = np.zeros(len(self.nodes)*6)
+
+            # Apply each constraint
+            for constraint in self.constraints.values():
+                Ke_dense, P_dummy = constraint.apply_constraint(Ke_dense, P_dummy)
+
+            # Convert back to sparse if needed
+            if sparse: Ke = sp.sparse.coo_matrix(Ke_dense)
+            else: Ke = Ke_dense
 
         # Check that there are no nodal instabilities
         if check_stability:
@@ -2060,6 +2355,46 @@ class FEModel3D():
                         self._add_dense_block(M, dofs, member_M)
 
         if log:
+            print(' - Adding quadrilateral self-mass terms to global mass matrix')
+
+        # Step through each quadrilateral in the model. Upstream only converts member and nodal
+        # loads to mass, which leaves shell self-weight out of the modal solution entirely. The
+        # quad and plate mass matrices below restore it.
+        for quad in self.quads.values():
+
+            # Get the quadrilateral's global mass matrix
+            quad_M = quad.M()
+
+            # Build the 24-entry DOF vector for the quadrilateral element
+            dofs = self._build_dof_vector(quad.i_node, quad.j_node, quad.m_node, quad.n_node)
+
+            if sparse:
+                # Append the quad mass block into the sparse lists.
+                self._append_sparse_block(dofs, quad_M, row_parts, col_parts, data_parts)
+            else:
+                # Add the quad mass block directly into the dense matrix.
+                self._add_dense_block(M, dofs, quad_M)
+
+        if log:
+            print(' - Adding plate self-mass terms to global mass matrix')
+
+        # Step through each plate in the model
+        for plate in self.plates.values():
+
+            # Get the plate's global mass matrix
+            plate_M = plate.M()
+
+            # Build the DOF vector for the plate's four nodes
+            dofs = self._build_dof_vector(plate.i_node, plate.j_node, plate.m_node, plate.n_node)
+
+            if sparse:
+                # Append the plate mass block into the sparse lists.
+                self._append_sparse_block(dofs, plate_M, row_parts, col_parts, data_parts)
+            else:
+                # Add the plate mass block directly into the dense matrix.
+                self._add_dense_block(M, dofs, plate_M)
+
+        if log:
             print(f' - Converting nodal loads from combo: {mass_combo_name} to mass (translation only)')
 
         # Step through each node in the model
@@ -2230,6 +2565,16 @@ class FEModel3D():
             if np.any(local):
                 dofs = self._build_dof_vector(node)
                 P[dofs, 0] += local
+
+        # Condense the load vector for any multi-point constraints. The stiffness matrix is
+        # condensed the same way in `Ke()`; the copy built here is discarded since only the
+        # transformed load vector is needed.
+        if len(self.constraints) > 0:
+
+            Ke_temp = self.Ke(combo_name=combo_name, log=False, sparse=False)
+
+            for constraint in self.constraints.values():
+                Ke_temp, P = constraint.apply_constraint(Ke_temp, P)
 
         # Return the global nodal force vector
         return P

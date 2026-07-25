@@ -51,8 +51,29 @@ class PhysMember(Member3D):
         v_ij = array([Xj - Xi, Yj - Yi, Zj - Zi])
         L = norm(v_ij)
 
-        # Guard against zero-length members
+        # Guard against zero-length members. These are used as rigid links and connection
+        # elements, so rather than dropping them we emit a single sub-member spanning the two
+        # coincident nodes. `Member3D` handles the zero-length case in `ke()`/`_ke_unc()`/`T()`.
         if L == 0:
+
+            name = self.name + 'a'
+
+            new_sub_member = Member3D(self.model, name, self.i_node, self.j_node,
+                                      self.material.name, self.section.name, self.rotation,
+                                      self.tension_only, self.comp_only)
+
+            # Flag the sub-member as active
+            for combo_name in self.model.load_combos.keys():
+                new_sub_member.active[combo_name] = True
+
+            # A zero-length member is a single segment, so it carries the physical member's
+            # releases and loads directly
+            new_sub_member.Releases = self.Releases
+            new_sub_member.PtLoads = self.PtLoads
+            new_sub_member.DistLoads = self.DistLoads
+
+            self.sub_members[name] = new_sub_member
+
             return
 
         u = v_ij / L  # Unit vector along member axis

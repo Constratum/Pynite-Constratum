@@ -11,7 +11,7 @@ setuptools.setup(
     description="A simple elastic 3D structural finite element library for Python.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/JWock82/Pynite.git",
+    url="https://github.com/Constratum/Pynite-Constratum.git",
     packages=setuptools.find_packages(include=['Pynite', 'Pynite.*']),
     package_data = {'Pynite': ['*html', '*.css', '*Full Logo No Buffer - Transparent.png']},
     classifiers=[

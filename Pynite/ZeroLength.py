@@ -157,9 +157,9 @@ class ZeroLength:
         return self.i_node.distance(self.j_node)
 
     # %%
-    def k(self, combo_name: str = "Combo 1") -> NDArray[float64]:
+    def ke(self, combo_name: str = "Combo 1") -> NDArray[float64]:
         """
-        Returns the local stiffness matrix for the zero-length element.
+        Returns the local elastic stiffness matrix for the zero-length element.
         """
         if self.material_transformation is None:
             self._setup_material_transformation()
@@ -228,11 +228,11 @@ class ZeroLength:
         return self.D(combo_name)  # For zero-length elements, local = global
 
     # %%
-    def K(self, combo_name: str = "Combo 1") -> NDArray[float64]:
+    def Ke(self, combo_name: str = "Combo 1") -> NDArray[float64]:
         """
-        Returns the element's global stiffness matrix.
+        Returns the element's global elastic stiffness matrix.
         """
-        return self.k(combo_name)  # For zero-length elements, local = global
+        return self.ke(combo_name)  # For zero-length elements, local = global
 
     # %%
     def F(self, combo_name: str = "Combo 1") -> NDArray[float64]:

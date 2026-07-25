@@ -55,6 +55,7 @@ class Renderer:
         self._annotation_size: Optional[float] = None  # None means auto-calculate
         self._annotation_size_manual: bool = False  # Track if user manually set the size
         self._annotation_size_cached: Optional[float] = None  # Cache to avoid recalculating 2600+ times per render
+        self._label_font_size: int = 12  # Point size used for node/member/spring/load text labels
         self._deformed_shape: bool = False
         self._deformed_scale: float = 30.0
         self._render_nodes: bool = True
@@ -145,6 +146,15 @@ class Renderer:
     def annotation_size(self, size: float) -> None:
         self._annotation_size = size
         self._annotation_size_manual = True  # Mark as manually set
+
+    @property
+    def label_font_size(self) -> int:
+        """Point size used for the node, member, spring and load text labels."""
+        return self._label_font_size
+
+    @label_font_size.setter
+    def label_font_size(self, size: int) -> None:
+        self._label_font_size = size
 
     @property
     def deformed_shape(self) -> bool:
@@ -489,19 +499,19 @@ class Renderer:
             label_points = [vis_node.label_point for vis_node in vis_nodes]
             labels = [vis_node.label for vis_node in vis_nodes]
             label_points = np.asarray(label_points, dtype=float)
-            self.plotter.add_point_labels(label_points, labels, bold=False, text_color='black', show_points=True, point_color='grey', point_size=5, shape=None, render_points_as_spheres=True)
+            self.plotter.add_point_labels(label_points, labels, bold=False, text_color='black', font_size=self.label_font_size, show_points=True, point_color='grey', point_size=5, shape=None, render_points_as_spheres=True)
 
         if self.show_labels and vis_springs:
             self._spring_label_points = [vis_spring.label_point for vis_spring in vis_springs]
             self._spring_labels = [vis_spring.label for vis_spring in vis_springs]
             spring_label_points = np.asarray(self._spring_label_points, dtype=float)
-            self.plotter.add_point_labels(spring_label_points, self._spring_labels, text_color='black', bold=False, shape=None, render_points_as_spheres=False)
+            self.plotter.add_point_labels(spring_label_points, self._spring_labels, text_color='black', bold=False, font_size=self.label_font_size, shape=None, render_points_as_spheres=False)
 
         if self.show_labels and vis_members:
             label_points = [vis_member.label_point for vis_member in vis_members]
             labels = [vis_member.label for vis_member in vis_members]
             label_points = np.asarray(label_points, dtype=float)
-            self.plotter.add_point_labels(label_points, labels, bold=False, text_color='black', show_points=False, shape=None, render_points_as_spheres=False)
+            self.plotter.add_point_labels(label_points, labels, bold=False, text_color='black', font_size=self.label_font_size, show_points=False, shape=None, render_points_as_spheres=False)
 
         # Render the loads if requested
         if (self.combo_name != None or self.case != None) and self.render_loads != False:
@@ -511,7 +521,7 @@ class Renderer:
 
             # Plot the load labels
             load_label_points = np.asarray(self._load_label_points, dtype=float)
-            self.plotter.add_point_labels(load_label_points, self._load_labels, bold=False, text_color='green', show_points=False, shape=None, render_points_as_spheres=False)
+            self.plotter.add_point_labels(load_label_points, self._load_labels, bold=False, text_color='green', font_size=self.label_font_size, show_points=False, shape=None, render_points_as_spheres=False)
 
         # Render the plates and quads, if present
         if self.model.quads or self.model.plates:

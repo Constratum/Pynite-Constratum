@@ -75,6 +75,9 @@ def _prepare_model(model: FEModel3D, n_modes: int = 0) -> None:
         for combo_name in model.load_combos.keys():
             phys_member.active[combo_name] = True
 
+    # Initialize all nonlinear spring materials to their starting state
+    _initialize_material_states(model)
+
     # Assign an internal ID to all nodes and elements in the model. This number is different from the name used by the user to identify nodes and elements.
     _renumber(model)
 
@@ -772,6 +775,12 @@ def _store_displacements(model: FEModel3D, D1: NDArray[float64], D2: NDArray[flo
             node.RY[combo.name] = D[node.ID*6 + 4, 0]
             node.RZ[combo.name] = D[node.ID*6 + 5, 0]
 
+        # Push the new displacements into the nonlinear spring materials as trial deformations so
+        # their tangent stiffness reflects the state the solver just produced
+        for spring in model.springs.values():
+            if spring.is_nonlinear and spring.material is not None:
+                spring.set_trial_deformation(combo.name)
+
 
 def _sum_displacements(model: FEModel3D, Delta_D1: NDArray[float64], Delta_D2: NDArray[float64], D1_indices: List[int], D2_indices: List[int], combo: LoadCombo) -> None:
     """Sums calculated displacements for a load step from the solver into the model's displacement vector `_D` and into each node object in the model.
@@ -805,6 +814,12 @@ def _sum_displacements(model: FEModel3D, Delta_D1: NDArray[float64], Delta_D2: N
         node.RX[combo.name] += Delta_D[node.ID*6 + 3, 0]
         node.RY[combo.name] += Delta_D[node.ID*6 + 4, 0]
         node.RZ[combo.name] += Delta_D[node.ID*6 + 5, 0]
+
+    # Push the accumulated displacements into the nonlinear spring materials as trial
+    # deformations so their tangent stiffness reflects the current load step
+    for spring in model.springs.values():
+        if spring.is_nonlinear and spring.material is not None:
+            spring.set_trial_deformation(combo.name)
 
 
 def _check_TC_convergence(model: FEModel3D, combo_name: str = "Combo 1", log: bool = True, spring_tolerance: float = 0, member_tolerance: float = 0) -> bool:
@@ -1462,3 +1477,42 @@ def _renumber(model: FEModel3D) -> None:
     # Number each quadrilateral in the model
     for id, quad in enumerate(model.quads.values()):
         quad.ID = id
+
+
+def _commit_material_states(model: FEModel3D) -> None:
+    """Commits the current trial state for all nonlinear springs in the model. This should be
+    called after successful convergence.
+
+    :param model: The finite element model
+    :type model: FEModel3D
+    """
+
+    for spring in model.springs.values():
+        if spring.is_nonlinear and spring.material is not None:
+            spring.commit_state()
+
+
+def _revert_material_states(model: FEModel3D) -> None:
+    """Reverts all nonlinear springs to their last committed state. This should be called when
+    iterations fail to converge.
+
+    :param model: The finite element model
+    :type model: FEModel3D
+    """
+
+    for spring in model.springs.values():
+        if spring.is_nonlinear and spring.material is not None:
+            spring.revert_to_last_commit()
+
+
+def _initialize_material_states(model: FEModel3D) -> None:
+    """Initializes all nonlinear springs to their starting state. This should be called at the
+    beginning of analysis.
+
+    :param model: The finite element model
+    :type model: FEModel3D
+    """
+
+    for spring in model.springs.values():
+        if spring.is_nonlinear and spring.material is not None:
+            spring.revert_to_start()

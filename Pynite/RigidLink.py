@@ -22,9 +22,9 @@ class RigidLink:
         self.i_node = i_node
         self.j_node = j_node
 
-    def k(self):
+    def Ke(self):
         """
-        Returns the global stiffness matrix for the rigid link.
+        Returns the global elastic stiffness matrix for the rigid link.
         """
 
         # Calculate the transformation matrix

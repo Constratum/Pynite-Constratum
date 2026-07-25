@@ -64,6 +64,9 @@ class Plate3D():
         # Plates need a link to the model they belong to
         self.model: FEModel3D = model
 
+        # Retain the material name so density can be looked up for mass matrix assembly
+        self.material_name: str = material_name
+
         # Get material properties for the plate from the model
         try:
             self.E: float = self.model.materials[material_name].E
@@ -506,6 +509,53 @@ class Plate3D():
 
         # Calculate and return the stiffness matrix in global coordinates
         return matmul(matmul(inv(self.T()), self.ke()), self.T())
+
+    def M(self) -> NDArray[float64]:
+        """Returns the plate element's global mass matrix.
+
+        A lumped mass formulation is used: the element's total mass is distributed evenly over
+        its four nodes, with a simplified rotational inertia term based on the plate thickness.
+
+        :return: The global mass matrix for the plate element.
+        :rtype: array
+        """
+
+        # Get the material density
+        rho = self.model.materials[self.material_name].rho
+
+        # Calculate the element area from its local dimensions
+        total_area = self.width()*self.height()
+
+        # Calculate the total mass of the element
+        total_mass = rho*total_area*self.t
+
+        # Distribute the mass evenly over the four nodes
+        mass_per_node = total_mass/4.0
+
+        # Simplified rotational inertia, distributed over the four nodes
+        rot_inertia = total_mass*(self.t**2)/12.0/4.0
+
+        # Initialize the local mass matrix (24x24 for 4 nodes with 6 DOF each)
+        m = zeros((24, 24))
+
+        # Add mass terms for each node
+        for i in range(4):
+
+            base_idx = i*6
+
+            # Translational mass terms
+            m[base_idx + 0, base_idx + 0] = mass_per_node
+            m[base_idx + 1, base_idx + 1] = mass_per_node
+            m[base_idx + 2, base_idx + 2] = mass_per_node
+
+            # Rotational mass terms
+            m[base_idx + 3, base_idx + 3] = rot_inertia
+            m[base_idx + 4, base_idx + 4] = rot_inertia
+            m[base_idx + 5, base_idx + 5] = rot_inertia
+
+        # Transform the mass matrix to global coordinates
+        T = self.T()
+        return matmul(matmul(inv(T), m), T)
 
     def FER(self, combo_name: str = 'Combo 1') -> NDArray[float64]:
         """

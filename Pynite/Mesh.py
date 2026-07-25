@@ -10,13 +10,30 @@ if TYPE_CHECKING:
     from typing import List, Union, Dict
     from Pynite.FEModel3D import FEModel3D
 
-#%%
+
 class Mesh():
     """
     A parent class for meshes to inherit from.
     """
 
     def __init__(self, thickness: float, material_name: str, model: FEModel3D, kx_mod: float = 1, ky_mod: float = 1, start_node: str = 'N1', start_element: str = 'Q1') -> None:
+        """Base mesh container storing common settings and membership.
+
+        :param thickness: Element thickness used by generated elements.
+        :type thickness: float
+        :param material_name: Name of the element material.
+        :type material_name: str
+        :param model: Owning FEModel3D; nodes/elements are inserted here on generate().
+        :type model: FEModel3D
+        :param kx_mod: In-plane stiffness modifier along local x for generated elements. Defaults to 1.
+        :type kx_mod: float, optional
+        :param ky_mod: In-plane stiffness modifier along local y for generated elements. Defaults to 1.
+        :type ky_mod: float, optional
+        :param start_node: First node name to use when numbering; e.g., ``'N1'``. Defaults to ``'N1'``.
+        :type start_node: str, optional
+        :param start_element: First element name to use when numbering; e.g., ``'Q1'`` or ``'R1'``. Defaults to ``'Q1'``.
+        :type start_element: str, optional
+        """
 
         self.thickness = thickness          # Thickness
         self.material_name = material_name            # The name of the element material
@@ -31,7 +48,65 @@ class Mesh():
         self.elements: Dict[str, Union[Quad3D, Plate3D]] = {}  # A dictionary containing the elements in the mesh
         self.element_type = 'Quad'          # The type of element used in the mesh
         self.is_generated = False          # A flag indicating whether the mesh has been generated
-    
+        self.needs_update = False          # A flag indicating whether the mesh needs regeneration due to changes
+
+    def __repr__(self) -> str:
+        return f"Mesh(material_name={self.material_name!r}, thickness={self.thickness})"
+
+    def _remove_from_model(self) -> None:
+        """Removes the mesh's nodes and elements from the model in preparation for regeneration.
+        Nodes that are connected to elements outside the mesh are preserved.
+        """
+
+        # Remove all elements in the mesh from the model
+        for element_name in list(self.elements.keys()):
+            element = self.elements[element_name]
+            if element.type == 'Rect' and element_name in self.model.plates:
+                del self.model.plates[element_name]
+            elif element.type == 'Quad' and element_name in self.model.quads:
+                del self.model.quads[element_name]
+
+        # Build a set of nodes that are shared between this mesh and elements outside the mesh
+        # (i.e., nodes that exist in both the mesh and external elements)
+        shared_nodes = set()
+        
+        # Check quads and plates - only add nodes that are actually in BOTH the mesh and the external element
+        for element in list(self.model.quads.values()) + list(self.model.plates.values()):
+            # Check if this element is not in the current mesh
+            if element.name not in self.elements:
+                # Add only the nodes of this element that are also in the mesh
+                if element.i_node.name in self.nodes:
+                    shared_nodes.add(element.i_node.name)
+                if element.j_node.name in self.nodes:
+                    shared_nodes.add(element.j_node.name)
+                if element.m_node.name in self.nodes:
+                    shared_nodes.add(element.m_node.name)
+                if element.n_node.name in self.nodes:
+                    shared_nodes.add(element.n_node.name)
+        
+        # Check members - only add nodes that are actually in BOTH the mesh and the member
+        for member in list(self.model.members.values()):
+            if member.i_node.name in self.nodes:
+                shared_nodes.add(member.i_node.name)
+            if member.j_node.name in self.nodes:
+                shared_nodes.add(member.j_node.name)
+        
+        # Check springs - only add nodes that are actually in BOTH the mesh and the spring
+        for spring in list(self.model.springs.values()):
+            if spring.i_node.name in self.nodes:
+                shared_nodes.add(spring.i_node.name)
+            if spring.j_node.name in self.nodes:
+                shared_nodes.add(spring.j_node.name)
+
+        # Remove nodes from the model only if they're not shared with other elements
+        for node_name in list(self.nodes.keys()):
+            if node_name in self.model.nodes and node_name not in shared_nodes:
+                del self.model.nodes[node_name]
+
+        # Clear the mesh's internal dictionaries
+        self.nodes.clear()
+        self.elements.clear()
+
     def _rename_duplicates(self) -> None:
         """Renames any nodes or elements in the mesh that are already in the model
         """
@@ -48,13 +123,13 @@ class Mesh():
 
                 # Come up with a new node name
                 node.name = self.model.unique_name(self.model.nodes, 'N')
-            
+
             # Save the node to the model
             self.model.nodes[node.name] = node
 
             # Add this node to the mesh's new/replacement `nodes` dictionary
             revised_nodes[node.name] = node
-            
+
         # Step through each element in the mesh
         for element in self.elements.values():
 
@@ -80,330 +155,399 @@ class Mesh():
 
                 # Save the element to the model
                 self.model.quads[element.name] = element
-            
+
             # Add this element to the mesh's new/replacement `elements` dictionary
             revised_elements[element.name] = element
-        
+
         # Replace the old dictionaries of nodes and elements with the revised dictionaries
         self.nodes = revised_nodes
         self.elements = revised_elements
-            
+
     def generate(self) -> None:
         """
         A placeholder to be overwritten by subclasses inheriting from this class
         """
         pass
 
-    def max_shear(self, direction: str = 'Qx', combo: str | None = None) -> float:
+    def max_shear(self, direction: str = 'Qx', combo_tags: str | list[str] = 'Combo 1') -> float:
+        """Returns the maximum shear in the mesh.
+
+        Checks corner and center shears in all elements contained in the mesh. The mesh
+        must belong to a solved model prior to calling this method.
+
+        :param direction: Shear component to evaluate. Use local components ``'Qx'`` or
+            ``'Qy'``, or global components ``'QX'`` or ``'QY'``. Defaults to ``'Qx'``.
+        :type direction: str
+        :param combo_tags: Either a single load combination name (``str``) or a list of
+            tags (``list[str]``). If a list is provided, any load combination with at
+            least one of these tags will be considered. Defaults to ``'Combo 1'``.
+        :type combo_tags: str | list[str]
+        :return: The maximum shear found for the requested component (0.0 if none).
+        :rtype: float
         """
-        Returns the maximum shear in the mesh.
-        
-        Checks corner and center shears in all the elements in the mesh. The mesh must be part of
-        a solved model prior to using this function.
 
-        Parameters
-        ----------
-
-        direction : string, optional
-            The direction to ge the maximum shear for. Options are 'Qx' or 'Qy'. Default
-            is 'Qx'.
-        combo : string, optional
-            The name of the load combination to get the maximum shear for. If omitted, all load
-            combinations will be evaluated.
-        """
-
+        # Determine if the shear is requested in local or global axes
         if direction in ['QX', 'QY']:
             local = False
         else:
             local = True
 
+        # Map direction string to index in element.shear() results
         if direction.upper() == 'QX':
             i = 0
         elif direction.upper() == 'QY':
             i = 1
         else:
-            raise Exception('Invalid direction specified for mesh shear results. Valid values are \'Qx\', \'Qy\', \'QX\', or \'QY\'')
-        
-        # Initialize the maximum value to None
+            raise Exception(
+                "Invalid direction specified for mesh shear results. "
+                "Valid values are 'Qx', 'Qy', 'QX', or 'QY'."
+            )
+
+        # Initialize the maximum value
         Q_max = None
 
         # Step through each element in the mesh
         for element in self.elements.values():
 
-            # Determine whether the element is a rectangle or a quadrilateral
+            # Determine evaluation points depending on element type
             if element.type == 'Rect':
-                # Use the rectangle's local (x, y) coordinate system
                 xi, yi = 0, 0
                 xj, yj = element.width(), 0
                 xm, ym = element.width(), element.height()
-                xn, yn, = 0, element.height()
+                xn, yn = 0, element.height()
             elif element.type == 'Quad':
-                # Use the quad's natural (r, s) coordinate system
                 xi, yi = -1, -1
                 xj, yj = 1, -1
                 xm, ym = 1, 1
                 xn, yn = -1, 1
+            else:
+                continue  # Skip unsupported element types
 
-            # Step through each load combination in the model
+            # Step through each load combination
             for load_combo in self.model.load_combos.values():
 
-                # Determine if this load combination should be evaluated
-                if combo is None or load_combo.name == combo:
-                    
-                    # Find the maximum shear in the element, checking each corner and the center
-                    # of the element
-                    Q_element = max([element.shear(xi, yi, local, load_combo.name)[i, 0],
-                                     element.shear(xj, yj, local, load_combo.name)[i, 0],
-                                     element.shear(xm, ym, local, load_combo.name)[i, 0],
-                                     element.shear(xn, yn, local, load_combo.name)[i, 0],
-                                     element.shear((xi + xj + xm + xn)/4, (yi + yj + ym + yn)/4, local, load_combo.name)[i, 0]])
+                # Decide whether this combo should be checked
+                if isinstance(combo_tags, str):
+                    include = (load_combo.name == combo_tags)
+                elif isinstance(combo_tags, list):
+                    include = any(tag in load_combo.tags for tag in combo_tags)
+                else:
+                    include = False
 
-                    # Determine if the maximum shear calculated is the largest encountered so far
-                    if Q_max is None or Q_max < Q_element:
-                        # Save this value if it's the largest
-                        Q_max = Q_element
-            
-        # Return the largest value encountered from all the elements
+                if not include:
+                    continue
+
+                # Evaluate corner and center shears
+                Q_element = max([
+                    element.shear(xi, yi, local, load_combo.name)[i, 0],
+                    element.shear(xj, yj, local, load_combo.name)[i, 0],
+                    element.shear(xm, ym, local, load_combo.name)[i, 0],
+                    element.shear(xn, yn, local, load_combo.name)[i, 0],
+                    # Center point (average of corners)
+                    element.shear(
+                        (xi + xj + xm + xn) / 4,
+                        (yi + yj + ym + yn) / 4,
+                        local,
+                        load_combo.name
+                    )[i, 0]
+                ])
+
+                # Track global maximum
+                if Q_max is None or Q_max < Q_element:
+                    Q_max = Q_element
+
+        # Return the largest shear found, or 0.0 if nothing was found
         return 0.0 if Q_max is None else Q_max
-    
-    def min_shear(self, direction: str = 'Qx', combo: str | None = None) -> float:
+
+    def min_shear(self, direction: str = 'Qx', combo_tags: str | list[str] = 'Combo 1') -> float:
+        """Returns the minimum shear in the mesh.
+
+        Checks corner and center shears in all elements contained in the mesh. The mesh
+        must belong to a solved model prior to calling this method.
+
+        :param direction: Shear component to evaluate. Use local components ``'Qx'`` or
+            ``'Qy'``, or global components ``'QX'`` or ``'QY'``. Defaults to ``'Qx'``.
+        :type direction: str
+        :param combo_tags: Either a single load combination name (``str``) or a list of
+            tags (``list[str]``). If a list is provided, any load combination with at
+            least one of these tags will be considered. Defaults to ``'Combo 1'``.
+        :type combo_tags: str | list[str]
+        :return: The minimum shear found for the requested component (0.0 if none).
+        :rtype: float
         """
-        Returns the minimum shear in the mesh.
-        
-        Checks corner and center shears in all the elements in the mesh. The mesh must be part of
-        a solved model prior to using this function.
 
-        Parameters
-        ----------
-
-        direction : string, optional
-            The direction to ge the minimum shear for. Options are 'Qx' or 'Qy'. Default
-            is 'Qx'.
-        combo : string, optional
-            The name of the load combination to get the minimum shear for. If omitted, all load
-            combinations will be evaluated.
-        """
-
+        # Determine if the shear is requested in local or global axes
         if direction in ['QX', 'QY']:
             local = False
         else:
             local = True
 
+        # Map direction string to index in element.shear() results
         if direction.upper() == 'QX':
             i = 0
         elif direction.upper() == 'QY':
             i = 1
-        elif direction.upper() == 'QZ':
-            i = 2
         else:
-            raise Exception('Invalid direction specified for mesh shear results. Valid values are \'Qx\', \'Qy\', \'QX\', \'QY\' or \'QZ\'')
+            raise Exception(
+                "Invalid direction specified for mesh shear results. "
+                "Valid values are 'Qx', 'Qy', 'QX', or 'QY'."
+            )
 
-        # Initialize the minimum value to None
+        # Initialize the minimum value
         Q_min = None
 
         # Step through each element in the mesh
         for element in self.elements.values():
 
-            # Determine whether the element is a rectangle or a quadrilateral
+            # Determine evaluation points depending on element type
             if element.type == 'Rect':
-                # Use the rectangle's local (x, y) coordinate system
                 xi, yi = 0, 0
                 xj, yj = element.width(), 0
                 xm, ym = element.width(), element.height()
-                xn, yn, = 0, element.height()
+                xn, yn = 0, element.height()
             elif element.type == 'Quad':
-                # Use the quad's natural (r, s) coordinate system
                 xi, yi = -1, -1
                 xj, yj = 1, -1
                 xm, ym = 1, 1
                 xn, yn = -1, 1
+            else:
+                continue  # Skip unsupported element types
 
-            # Step through each load combination the element utilizes
+            # Step through each load combination
             for load_combo in self.model.load_combos.values():
 
-                # Determine if this load combination should be evaluated
-                if combo is None or load_combo.name == combo:
-                    
-                    # Find the minimum shear in the element, checking each corner and the center
-                    # of the element
-                    Q_element = min([element.shear(xi, yi, local, load_combo.name)[i, 0],
-                                     element.shear(xj, yj, local, load_combo.name)[i, 0],
-                                     element.shear(xm, ym, local, load_combo.name)[i, 0],
-                                     element.shear(xn, yn, local, load_combo.name)[i, 0],
-                                     element.shear((xi + xj + xm + xn)/4, (yi + yj + ym + yn)/4, local, load_combo.name)[i, 0]])
+                # Decide whether this combo should be checked
+                if isinstance(combo_tags, str):
+                    include = (load_combo.name == combo_tags)
+                elif isinstance(combo_tags, list):
+                    include = any(tag in load_combo.tags for tag in combo_tags)
+                else:
+                    include = False
 
-                    # Determine if the minimum shear calculated is the smallest encountered so far
-                    if Q_min is None or Q_min > Q_element:
-                        # Save this value if it's the smallest
-                        Q_min = Q_element
-            
-        # Return the smallest value encountered from all the elements
+                if not include:
+                    continue
+
+                # Evaluate corner and center shears
+                Q_element = min([
+                    element.shear(xi, yi, local, load_combo.name)[i, 0],
+                    element.shear(xj, yj, local, load_combo.name)[i, 0],
+                    element.shear(xm, ym, local, load_combo.name)[i, 0],
+                    element.shear(xn, yn, local, load_combo.name)[i, 0],
+                    # Center point (average of corners)
+                    element.shear(
+                        (xi + xj + xm + xn) / 4,
+                        (yi + yj + ym + yn) / 4,
+                        local,
+                        load_combo.name
+                    )[i, 0]
+                ])
+
+                # Track global minimum
+                if Q_min is None or Q_min > Q_element:
+                    Q_min = Q_element
+
+        # Return the smallest shear found, or 0.0 if nothing was found
         return 0.0 if Q_min is None else Q_min
 
-    def max_moment(self, direction: str = 'Mx', combo: str | None = None) -> float:
+    def max_moment(self, direction: str = 'Mx', combo_tags: str | list[str] = 'Combo 1') -> float:
+        """Returns the maximum moment in the mesh.
+
+        Checks corner and center moments in all elements contained in the mesh. The mesh
+        must belong to a solved model prior to calling this method.
+
+        :param direction: Moment component to evaluate. Use local components ``'Mx'``,
+            ``'My'``, ``'Mxy'`` or global components ``'MX'``, ``'MY'``, ``'MZ'``.
+            Defaults to ``'Mx'``.
+        :type direction: str
+        :param combo_tags: Either a single load combination name (``str``) or a list of
+            tags (``list[str]``). If a list is provided, any load combination with at
+            least one of these tags will be considered. Defaults to ``'Combo 1'``.
+        :type combo_tags: str | list[str]
+        :return: The maximum moment found for the requested component (0.0 if none).
+        :rtype: float
         """
-        Returns the maximum moment in the mesh.
-        
-        Checks corner and center moments in all the elements in the mesh. The mesh must be part of
-        a solved model prior to using this function.
 
-        Parameters
-        ----------
-
-        direction : string, optional
-            The direction to ge the maximum moment for. Options are 'Mx', 'My', or 'Mxy'. Default
-            is 'Mx'.
-        combo : string, optional
-            The name of the load combination to get the maximum moment for. If omitted, all load
-            combinations will be evaluated.
-        """
-
+        # Determine if the moment is requested in local or global axes
         if direction in ['MX', 'MY', 'MZ']:
             local = False
         else:
             local = True
 
+        # Map direction string to index in element.moment() results
         if direction.upper() == 'MX':
             i = 0
         elif direction.upper() == 'MY':
             i = 1
-        elif direction == 'Mxy' or direction == 'MZ':
+        elif direction == 'Mxy' or direction.upper() == 'MZ':
             i = 2
         else:
-            raise Exception('Invalid direction specified for mesh moment results. Valid values are \'Mx\', \'My\', \'Mxy\', \'MX\', \'MY\', or \'MZ\'')
+            raise Exception(
+                "Invalid direction specified for mesh moment results. "
+                "Valid values are 'Mx', 'My', 'Mxy', 'MX', 'MY', or 'MZ'."
+            )
 
-        # Initialize the maximum value to None
+        # Initialize the maximum value
         M_max = None
 
         # Step through each element in the mesh
         for element in self.elements.values():
 
-            # Determine whether the element is a rectangle or a quadrilateral
+            # Determine evaluation points depending on element type
             if element.type == 'Rect':
                 # Use the rectangle's local (x, y) coordinate system
                 xi, yi = 0, 0
                 xj, yj = element.width(), 0
                 xm, ym = element.width(), element.height()
-                xn, yn, = 0, element.height()
+                xn, yn = 0, element.height()
             elif element.type == 'Quad':
                 # Use the quad's natural (xi, eta) coordinate system
                 xi, yi = -1, -1
                 xj, yj = 1, -1
                 xm, ym = 1, 1
                 xn, yn = -1, 1
+            else:
+                continue  # Skip unsupported element types
 
-            # Step through each load combination the element utilizes
+            # Step through each load combination
             for load_combo in self.model.load_combos.values():
 
-                # Determine if this load combination should be evaluated
-                if combo is None or load_combo.name == combo:
-                    
-                    # Find the maximum moment in the element, checking each corner and the center
-                    # of the element
-                    M_element = max([element.moment(xi, yi, local, load_combo.name)[i, 0],
-                                     element.moment(xj, yj, local, load_combo.name)[i, 0],
-                                     element.moment(xm, ym, local, load_combo.name)[i, 0],
-                                     element.moment(xn, yn, local, load_combo.name)[i, 0],
-                                     element.moment((xi + xj+ xm + xn)/4, (yi + yj + ym + yn)/4, local, load_combo.name)[i, 0]])
+                # Decide whether this combo should be checked
+                if isinstance(combo_tags, str):
+                    include = (load_combo.name == combo_tags)
+                elif isinstance(combo_tags, list):
+                    include = any(tag in load_combo.tags for tag in combo_tags)
+                else:
+                    include = False
 
-                    # Determine if the maximum moment calculated is the largest encountered so far
-                    if M_max is None or M_max < M_element:
-                        # Save this value if it's the largest
-                        M_max = M_element
-            
-        # Return the largest value encountered from all the elements
+                if not include:
+                    continue
+
+                # Evaluate corner and center moments
+                M_element = max([
+                    element.moment(xi, yi, local, load_combo.name)[i, 0],
+                    element.moment(xj, yj, local, load_combo.name)[i, 0],
+                    element.moment(xm, ym, local, load_combo.name)[i, 0],
+                    element.moment(xn, yn, local, load_combo.name)[i, 0],
+                    # Center point (average of corners)
+                    element.moment((xi + xj + xm + xn) / 4, (yi + yj + ym + yn) / 4,
+                                local, load_combo.name)[i, 0]
+                ])
+
+                # Track global maximum
+                if M_max is None or M_max < M_element:
+                    M_max = M_element
+
+        # Return the largest moment found, or 0.0 if nothing was found
         return 0.0 if M_max is None else M_max
-    
-    def min_moment(self, direction: str = 'Mx', combo: str | None = None) -> float:
-        """
-        Returns the minimum moment in the mesh.
-        
-        Checks corner and center moments in all the elements in the mesh. The mesh must be part of
-        a solved model prior to using this function.
 
-        Parameters
-        ----------
+    def min_moment(self, direction: str = 'Mx', combo_tags: str | list[str] = 'Combo 1') -> float:
+        """Returns the minimum moment in the mesh.
 
-        direction : string, optional
-            The direction to ge the minimum moment for. Options are 'Mx', 'My', or 'Mxy'. Default
-            is 'Mx'.
-        combo : string, optional
-            The name of the load combination to get the minimum moment for. If omitted, all load
-            combinations will be evaluated.
+        Checks corner and center moments in all elements contained in the mesh. The mesh
+        must belong to a solved model prior to calling this method.
+
+        :param direction: Moment component to evaluate. Use local components ``'Mx'``,
+            ``'My'``, ``'Mxy'`` or global components ``'MX'``, ``'MY'``, ``'MZ'``.
+            Defaults to ``'Mx'``.
+        :type direction: str
+        :param combo_tags: Either a single load combination name (``str``) or a list of
+            tags (``list[str]``). If a list is provided, any load combination with at
+            least one of these tags will be considered. Defaults to ``'Combo 1'``.
+        :type combo_tags: str | list[str]
+        :return: The minimum moment found for the requested component (0.0 if none).
+        :rtype: float
         """
-        
+
+        # Determine if the moment is requested in local or global axes
         if direction in ['MX', 'MY', 'MZ']:
             local = False
         else:
             local = True
 
+        # Map direction string to index in element.moment() results
         if direction.upper() == 'MX':
             i = 0
         elif direction.upper() == 'MY':
             i = 1
-        elif direction == 'Mxy' or direction == 'MZ':
+        elif direction == 'Mxy' or direction.upper() == 'MZ':
             i = 2
         else:
-            raise Exception('Invalid direction specified for mesh moment results. Valid values are \'Mx\', \'My\', \'Mxy\', \'MX\', \'MY\', or \'MZ\'')
+            raise Exception(
+                "Invalid direction specified for mesh moment results. "
+                "Valid values are 'Mx', 'My', 'Mxy', 'MX', 'MY', or 'MZ'."
+            )
 
-        # Initialize the minimum value to None
+        # Initialize the minimum value
         M_min = None
 
         # Step through each element in the mesh
         for element in self.elements.values():
 
-            # Determine whether the element is a rectangle or a quadrilateral
+            # Determine evaluation points depending on element type
             if element.type == 'Rect':
                 # Use the rectangle's local (x, y) coordinate system
                 xi, yi = 0, 0
                 xj, yj = element.width(), 0
                 xm, ym = element.width(), element.height()
-                xn, yn, = 0, element.height()
+                xn, yn = 0, element.height()
             elif element.type == 'Quad':
-                # Use the quad's natural (r, s) coordinate system
+                # Use the quad's natural (xi, eta) coordinate system
                 xi, yi = -1, -1
                 xj, yj = 1, -1
                 xm, ym = 1, 1
                 xn, yn = -1, 1
+            else:
+                continue  # Skip unsupported element types
 
-            # Step through each load combination the element utilizes
+            # Step through each load combination
             for load_combo in self.model.load_combos.values():
 
-                # Determine if this load combination should be evaluated
-                if combo is None or load_combo.name == combo:
-                    
-                    # Find the minimum moment in the element, checking each corner and the center
-                    # of the element
-                    M_element = min([element.moment(xi, yi, local, load_combo.name)[i, 0],
-                                     element.moment(xj, yj, local, load_combo.name)[i, 0],
-                                     element.moment(xm, ym, local, load_combo.name)[i, 0],
-                                     element.moment(xn, yn, local, load_combo.name)[i, 0],
-                                     element.moment((xi + xj + xm + xn)/4, (yi + yj + ym + yn)/4, local, load_combo.name)[i, 0]])
+                # Decide whether this combo should be checked
+                if isinstance(combo_tags, str):
+                    include = (load_combo.name == combo_tags)
+                elif isinstance(combo_tags, list):
+                    include = any(tag in load_combo.tags for tag in combo_tags)
+                else:
+                    include = False
 
-                    # Determine if the minimum moment calculated is the smallest encountered so far
-                    if M_min is None or M_min > M_element:
-                        # Save this value if it's the smallest
-                        M_min = M_element
-            
-        # Return the smallest value encountered from all the elements
+                if not include:
+                    continue
+
+                # Evaluate corner and center moments
+                M_element = min([
+                    element.moment(xi, yi, local, load_combo.name)[i, 0],
+                    element.moment(xj, yj, local, load_combo.name)[i, 0],
+                    element.moment(xm, ym, local, load_combo.name)[i, 0],
+                    element.moment(xn, yn, local, load_combo.name)[i, 0],
+                    # Center point (average of corners)
+                    element.moment((xi + xj + xm + xn) / 4, (yi + yj + ym + yn) / 4,
+                                local, load_combo.name)[i, 0]
+                ])
+
+                # Track global minimum
+                if M_min is None or M_min > M_element:
+                    M_min = M_element
+
+        # Return the smallest moment found, or 0.0 if nothing was found
         return 0.0 if M_min is None else M_min
-    
-    def max_membrane(self, direction: str = 'Sx', combo: str | None = None) -> float:
-        """
-        Returns the maximum membrane stress in the mesh.
-        
-        Checks corner and center stresses in all the elements in the mesh. The mesh must be part of
-        a solved model prior to using this method.
 
-        Parameters
-        ----------
+    def max_membrane(self, direction: str = 'Sx', combo_tags: str | list[str] = 'Combo 1') -> float:
+        """Returns the maximum membrane stress in the mesh.
 
-        direction : string, optional
-            The direction to ge the maximum membrane force for. Options are 'Sx', 'Sy', or 'Sxy'. Default is 'Sx'.
-        combo : string, optional
-            The name of the load combination to get the maximum membrane force for. If omitted, all load combinations will be evaluated.
+        Checks corner and center moments in all elements contained in the mesh. The mesh
+        must belong to a solved model prior to calling this method.
+
+        :param direction: Membrane stress component to evaluate. Use local components ``'Sx'``,
+            ``'Sy'``, ``'Txy'``.
+        :type direction: str
+        :param combo_tags: Either a single load combination name (``str``) or a list of
+            tags (``list[str]``). If a list is provided, any load combination with at
+            least one of these tags will be considered. Defaults to ``'Combo 1'``.
+        :type combo_tags: str | list[str]
+        :return: The maximum stress found for the requested component (0.0 if none).
+        :rtype: float
         """
-        
+
         # Determine if local or global coordinate results have been requested
         if direction in ['SX', 'SY']:
             local = False
@@ -418,65 +562,84 @@ class Mesh():
         elif direction == 'Sxy':
             i = 2
         else:
-            raise Exception('Invalid direction specified for mesh membrane stress results. Valid values are \'Sx\', \'Sy\', or \'Sxy\'')
+            raise Exception(
+                "Invalid direction specified for mesh membrane stress results. "
+                "Valid values are 'Sx', 'Sy', or 'Sxy'."
+            )
 
-        # Initialize the maximum value to None
+        # Initialize the maximum value
         S_max = None
 
         # Step through each element in the mesh
         for element in self.elements.values():
 
-            # Determine whether the element is a rectangle or a quadrilateral
+            # Determine evaluation points depending on element type
             if element.type == 'Rect':
-                # Use the rectangle's local (x, y) coordinate system
                 xi, yi = 0, 0
                 xj, yj = element.width(), 0
                 xm, ym = element.width(), element.height()
-                xn, yn, = 0, element.height()
+                xn, yn = 0, element.height()
             elif element.type == 'Quad':
-                # Use the quad's natural (r, s) coordinate system
                 xi, yi = -1, -1
                 xj, yj = 1, -1
                 xm, ym = 1, 1
                 xn, yn = -1, 1
+            else:
+                continue  # Skip unsupported element types
 
-            # Step through each load combination the element utilizes
+            # Step through each load combination
             for load_combo in self.model.load_combos.values():
 
-                # Determine if this load combination should be evaluated
-                if combo is None or load_combo.name == combo:
-                    
-                    # Find the maximum membrane stress in the element, checking each corner and the center of the element
-                    M_element = max([element.membrane(xi, yi, local, load_combo.name)[i, 0],
-                                        element.membrane(xj, yj, local, load_combo.name)[i, 0],
-                                        element.membrane(xm, ym, local, load_combo.name)[i, 0],
-                                        element.membrane(xn, yn, local, load_combo.name)[i, 0],
-                                        element.membrane((xi + xj + xm + xn)/4, (yi + yj + ym + yn)/4, local, load_combo.name)[i, 0]])
+                # Decide whether this combo should be checked
+                if isinstance(combo_tags, str):
+                    include = (load_combo.name == combo_tags)
+                elif isinstance(combo_tags, list):
+                    include = any(tag in load_combo.tags for tag in combo_tags)
+                else:
+                    include = False
 
-                    # Determine if the maximum membrane stress calculated is the largest encountered so far
-                    if S_max is None or S_max < M_element:
-                        # Save this value if it's the smallest
-                        S_max = M_element
-            
-        # Return the smallest value encountered from all the elements
+                if not include:
+                    continue
+
+                # Evaluate corner and center membrane stresses
+                S_element = max([
+                    element.membrane(xi, yi, local, load_combo.name)[i, 0],
+                    element.membrane(xj, yj, local, load_combo.name)[i, 0],
+                    element.membrane(xm, ym, local, load_combo.name)[i, 0],
+                    element.membrane(xn, yn, local, load_combo.name)[i, 0],
+                    # Center point (average of corners)
+                    element.membrane(
+                        (xi + xj + xm + xn) / 4,
+                        (yi + yj + ym + yn) / 4,
+                        local,
+                        load_combo.name
+                    )[i, 0]
+                ])
+
+                # Track global maximum
+                if S_max is None or S_max < S_element:
+                    S_max = S_element
+
+        # Return the largest membrane stress found, or 0.0 if nothing was found
         return 0.0 if S_max is None else S_max
     
-    def min_membrane(self, direction: str = 'Sx', combo: str | None = None) -> float:
-        """
-        Returns the minimum membrane stress in the mesh.
-        
-        Checks corner and center stresses in all the elements in the mesh. The mesh must be part of
-        a solved model prior to using this method.
+    def min_membrane(self, direction: str = 'Sx', combo_tags: str | list[str] = 'Combo 1') -> float:
+        """Returns the minimum membrane stress in the mesh.
 
-        Parameters
-        ----------
+        Checks corner and center moments in all elements contained in the mesh. The mesh
+        must belong to a solved model prior to calling this method.
 
-        direction : string, optional
-            The direction to ge the minimum membrane force for. Options are 'Sx', 'Sy', or 'Sxy'. Default is 'Sx'.
-        combo : string, optional
-            The name of the load combination to get the minimum membrane force for. If omitted, all load combinations will be evaluated.
+        :param direction: Membrane stress component to evaluate. Use local components ``'Sx'``,
+            ``'Sy'``, ``'Txy'``.
+        :type direction: str
+        :param combo_tags: Either a single load combination name (``str``) or a list of
+            tags (``list[str]``). If a list is provided, any load combination with at
+            least one of these tags will be considered. Defaults to ``'Combo 1'``.
+        :type combo_tags: str | list[str]
+        :return: The minimum stress found for the requested component (0.0 if none).
+        :rtype: float
         """
-        
+
         # Determine if local or global coordinate results have been requested
         if direction in ['SX', 'SY']:
             local = False
@@ -491,102 +654,110 @@ class Mesh():
         elif direction == 'Sxy':
             i = 2
         else:
-            raise Exception('Invalid direction specified for mesh membrane stress results. Valid values are \'Sx\', \'Sy\', or \'Sxy\'')
+            raise Exception(
+                "Invalid direction specified for mesh membrane stress results. "
+                "Valid values are 'Sx', 'Sy', or 'Sxy'."
+            )
 
-        # Initialize the maximum value to None
+        # Initialize the maximum value
         S_min = None
 
         # Step through each element in the mesh
         for element in self.elements.values():
 
-            # Determine whether the element is a rectangle or a quadrilateral
+            # Determine evaluation points depending on element type
             if element.type == 'Rect':
-                # Use the rectangle's local (x, y) coordinate system
                 xi, yi = 0, 0
                 xj, yj = element.width(), 0
                 xm, ym = element.width(), element.height()
-                xn, yn, = 0, element.height()
+                xn, yn = 0, element.height()
             elif element.type == 'Quad':
-                # Use the quad's natural (r, s) coordinate system
                 xi, yi = -1, -1
                 xj, yj = 1, -1
                 xm, ym = 1, 1
                 xn, yn = -1, 1
+            else:
+                continue  # Skip unsupported element types
 
-            # Step through each load combination the element utilizes
+            # Step through each load combination
             for load_combo in self.model.load_combos.values():
 
-                # Determine if this load combination should be evaluated
-                if combo is None or load_combo.name == combo:
+                # Decide whether this combo should be checked
+                if isinstance(combo_tags, str):
+                    include = (load_combo.name == combo_tags)
+                elif isinstance(combo_tags, list):
+                    include = any(tag in load_combo.tags for tag in combo_tags)
+                else:
+                    include = False
 
-                    # Find the minimum membrane stress in the element, checking each corner and the center of the element
-                    M_element = min([element.membrane(xi, yi, local, load_combo.name)[i, 0],
-                                     element.membrane(xj, yj, local, load_combo.name)[i, 0],
-                                     element.membrane(xm, ym, local, load_combo.name)[i, 0],
-                                     element.membrane(xn, yn, local, load_combo.name)[i, 0],
-                                     element.membrane((xi + xj + xm + xn)/4, (yi + yj + ym + yn)/4, local, load_combo.name)[i, 0]])
+                if not include:
+                    continue
 
-                    # Determine if the minimum membrane stress calculated is the smallest encountered so far
-                    if S_min is None or S_min > M_element:
-                        # Save this value if it's the smallest
-                        S_min = M_element
-            
-        # Return the smallest value encountered from all the elements
+                # Evaluate corner and center membrane stresses
+                S_element = min([
+                    element.membrane(xi, yi, local, load_combo.name)[i, 0],
+                    element.membrane(xj, yj, local, load_combo.name)[i, 0],
+                    element.membrane(xm, ym, local, load_combo.name)[i, 0],
+                    element.membrane(xn, yn, local, load_combo.name)[i, 0],
+                    # Center point (average of corners)
+                    element.membrane(
+                        (xi + xj + xm + xn) / 4,
+                        (yi + yj + ym + yn) / 4,
+                        local,
+                        load_combo.name
+                    )[i, 0]
+                ])
+
+                # Track global maximum
+                if S_min is None or S_min > S_element:
+                    S_min = S_element
+
+        # Return the largest membrane stress found, or 0.0 if nothing was found
         return 0.0 if S_min is None else S_min
-    
-#%%
+
+
 class RectangleMesh(Mesh):
 
     def __init__(self, mesh_size: float, width: float, height: float, thickness: float, material_name: str, model: FEModel3D, kx_mod: float = 1.0, ky_mod: float = 1.0, origin: List[float] = [0, 0, 0], plane: str = 'XY', x_control: List[float] | None = None, y_control: List[float] | None = None, start_node: str = 'N1', start_element: str = 'Q1', element_type: str = 'Quad') -> None:
         """
         A rectangular mesh of elements.
 
-        Parameters
-        ----------
-
-        mesh_size : number
-            Desired mesh size.
-        width : number
-            The overall width of the mesh measured along its local x-axis.
-        height : number
-            The overall height of the mesh measured along its local y-axis.
-        thickness : number
-            Element thickness.
-        material_name : string
-            The name of the element material.
-        model : FEModel3D
-            The model the mesh belongs to.
-        kx_mod : number
-            Stiffness modification factor for in-plane stiffness in the element's local
+        :param mesh_size: Desired mesh size.
+        :type mesh_size: float
+        :param width: The overall width of the mesh measured along its local x-axis.
+        :type width: float
+        :param height: The overall height of the mesh measured along its local y-axis.
+        :type height: float
+        :param thickness: Element thickness.
+        :type thickness: float
+        :material_name: The name of the element material.
+        :type material_name: str
+        :param model: The model the mesh belongs to.
+        :type model: FEModel3D
+        :param kx_mod: Stiffness modification factor for in-plane stiffness in the element's local
             x-direction. Default value is 1.0 (no modification).
-        ky_mod : number
-            Stiffness modification factor for in-plane stiffness in the element's local
+        :type kx_mod: float, optional
+        :param ky_mod: Stiffness modification factor for in-plane stiffness in the element's local
             y-direction. Default value is 1.0 (no modification).
-        origin : list, optional
-            The origin of the rectangular mesh's local coordinate system. The default is [0, 0, 0].
-        plane : string, optional
-            The plane the mesh will be parallel to. Options are 'XY', 'YZ', and 'XZ'. The default
-            is 'XY'.
-        x_control : list, optional
-            A list of control points along the mesh's local x-axis work into the mesh.
-        y_control : list, optional
-            A list of control points along the mesh's local y-axis work into the mesh.
-        start_node : string, optional
-            A unique name for the first node in the mesh. The default is 'N1'.
-        start_element : string, optional
-            A unique name for the first element in the mesh. The default is 'Q1' or 'R1' depending
-            on the type of element selected.
-        element_type : string, optional
-            The type of element to make the mesh out of. Either 'Quad' or 'Rect'. The default is
-            'Quad'.
-
-        Returns
-        -------
-
-        A new rectangular mesh object.
-
+        :type ky_mod: float, optional
+        :param origin: The origin of the rectangular mesh's local coordinate system. The default is [0.0, 0.0, 0.0].
+        :type origin: list[float], optional
+        :param plane: The plane the mesh will be parallel to. Options are 'XY', 'YZ', and 'XZ'. The default is 'XY'.
+        :type plane: str, optional
+        :param x_control: A list of control points along the mesh's local x-axis work into the mesh.
+        :type x_control: list[float], optional
+        :param y_control: A list of control points along the mesh's local y-axis work into the mesh.
+        :type y_control: list[float], optional
+        :param start_node: A unique name for the first node in the mesh. The default is 'N1'.
+        :type start_node: str, optional
+        :param start_element: A unique name for the first element in the mesh. The default is 'Q1' or 'R1' depending on the type of element selected.
+        :type start_element: str, optional
+        :param element_type: The type of element to make the mesh out of. Either 'Quad' or 'Rect'. The default is 'Quad'.
+        :type element_type: str, optional
+        :return: A new rectangular mesh object.
+        :rtype: RectangleMesh
         """
-        
+
         super().__init__(thickness, material_name, model, kx_mod, ky_mod, start_node, start_element)
         self.mesh_size = mesh_size
         self.width = width
@@ -603,7 +774,14 @@ class RectangleMesh(Mesh):
         self.element_type = element_type
         self.openings: Dict[str, RectOpening] = {}
     
+    def __repr__(self) -> str:
+        return f"RectangleMesh(material_name={self.material_name!r}, width={self.width}, height={self.height}, thickness={self.thickness})"
+
     def generate(self) -> None:
+
+        # Remove old mesh elements and nodes from the model if regenerating
+        if self.is_generated:
+            self._remove_from_model()
 
         mesh_size = self.mesh_size
         width = self.width
@@ -644,6 +822,11 @@ class RectangleMesh(Mesh):
                 unique_list.append(y_control[i])
         unique_list.append(y_control[-1])
         y_control = unique_list
+
+        # Remove any control points that fall outside the mesh boundaries
+        # Control points outside [0, width] or [0, height] would create elements outside the intended mesh
+        x_control = [val for val in x_control if val >= -1e-10 and val <= width + 1e-10]
+        y_control = [val for val in y_control if val >= -1e-10 and val <= height + 1e-10]
     
         # Each node number will be increased by the offset calculated below
         node_offset = int(self.start_node[1:]) - 1
@@ -728,7 +911,7 @@ class RectangleMesh(Mesh):
                             raise Exception('Invalid plane selected for RectangleMesh.')
 
                         # Add the node to the mesh
-                        self.nodes[node_name] = Node3D(node_name, X, Y, Z)
+                        self.nodes[node_name] = Node3D(self.model, node_name, X, Y, Z)
 
                         # Move to the next x coordinate
                         x += b
@@ -862,10 +1045,15 @@ class RectangleMesh(Mesh):
 
         # Flag the mesh as generated
         self.is_generated = True
+        self.needs_update = False
 
     def node_local_coords(self, node: Node3D) -> tuple[float, float]:
-        """
-        Calculates a node's position in the mesh's local coordinate system
+        """Calculates a node's position in the mesh's local x/y coordinate system.
+
+        :param node: The node to evaluate.
+        :type node: Node3D
+        :return: Local coordinates ``(x, y)`` measured from the mesh origin.
+        :rtype: tuple[float, float]
         """
 
         if self.plane == 'XY':
@@ -881,25 +1069,20 @@ class RectangleMesh(Mesh):
         return x, y
 
     def add_rect_opening(self, name: str, x_left: float, y_bott: float, width: float, height: float) -> None:
-        """
-        Adds a rectangular opening to the mesh.
+        """Adds a rectangular opening to the mesh.
 
-        Parameters
-        ----------
-
-        name : string
-            A unique name for the opening that can be used to access it later
-            on.
-        x_left : number
-            The x-coordinate for the left side of the opening in the mesh's
-            local coordinate system.
-        y_bott : number
-            The y-coordinate for the bottom of the opening in the mesh's local
-            coordinate system
-        width : number
-            The width of the opening.
-        height : number
-            The height of the opening.
+        :param name: Unique name for the opening (used as its key in ``mesh.openings``).
+        :type name: str
+        :param x_left: Local x-coordinate for the left edge of the opening.
+        :type x_left: float
+        :param y_bott: Local y-coordinate for the bottom edge of the opening.
+        :type y_bott: float
+        :param width: Opening width (local x-direction).
+        :type width: float
+        :param height: Opening height (local y-direction).
+        :type height: float
+        :return: None
+        :rtype: NoneType
         """
 
         self.openings[name] = RectOpening(x_left, y_bott, width, height)
@@ -908,36 +1091,36 @@ class RectangleMesh(Mesh):
         self.x_control.append(x_left + width)
         self.y_control.append(y_bott + height)
 
-        # Flag the mesh as not generated yet
-        self.is_generated = False
+        # Flag that regeneration is needed if already generated
+        if self.is_generated:
+            self.needs_update = True
 
-#%%
+
 class RectOpening():
     """
     Represents a rectangular opening in a rectangular mesh.
     """
 
     def __init__(self, x_left: float, y_bott: float, width: float, height: float) -> None:
-        """
-        Parameters
-        ----------
+        """Create a rectangular opening descriptor.
 
-        x_left : number
-            The x-coordinate for the left side of the opening in the mesh's
-            local coordinate system.
-        y_bott : number
-            The y-coordinate for the bottom of the opening in the mesh's local
-            coordinate system
-        width : number
-            The width of the opening.
-        height : number
-            The height of the opening.
+        :param x_left: Local x-coordinate for the left edge of the opening.
+        :type x_left: float
+        :param y_bott: Local y-coordinate for the bottom edge of the opening.
+        :type y_bott: float
+        :param width: Opening width (local x-direction).
+        :type width: float
+        :param height: Opening height (local y-direction).
+        :type height: float
         """
 
         self.x_left = x_left
         self.y_bott = y_bott
         self.width = width
         self.height = height
+
+    def __repr__(self) -> str:
+        return f"RectOpening(x_left={self.x_left}, y_bott={self.y_bott}, width={self.width}, height={self.height})"
 
 #%%           
 class AnnulusMesh(Mesh):
@@ -947,6 +1130,34 @@ class AnnulusMesh(Mesh):
 
     def __init__(self, mesh_size: float, outer_radius: float, inner_radius: float, thickness: float, material_name: str, model: FEModel3D, kx_mod: float = 1,
         ky_mod: float = 1, origin: List[float] = [0, 0, 0], axis: str = 'Y', start_node: str = 'N1', start_element: str = 'Q1') -> None:
+
+        """Annular (donut) mesh between inner and outer radii.
+
+        :param mesh_size: Target element size used to seed circumferential and radial divisions.
+        :type mesh_size: float
+        :param outer_radius: Outer radius of the annulus.
+        :type outer_radius: float
+        :param inner_radius: Inner radius of the annulus.
+        :type inner_radius: float
+        :param thickness: Element thickness.
+        :type thickness: float
+        :param material_name: Name of the element material.
+        :type material_name: str
+        :param model: The FEModel3D this mesh will add nodes/elements to.
+        :type model: FEModel3D
+        :param kx_mod: In-plane stiffness modifier along the element's local x-direction. Defaults to 1.
+        :type kx_mod: float, optional
+        :param ky_mod: In-plane stiffness modifier along the element's local y-direction. Defaults to 1.
+        :type ky_mod: float, optional
+        :param origin: Local origin of the annulus in global coordinates ``[X, Y, Z]``. Defaults to ``[0, 0, 0]``.
+        :type origin: list[float], optional
+        :param axis: Global axis about which the mesh is generated: ``'X'``, ``'Y'``, or ``'Z'``. Defaults to ``'Y'``.
+        :type axis: str, optional
+        :param start_node: Name of the first node to use. Defaults to ``'N1'``.
+        :type start_node: str, optional
+        :param start_element: Name of the first element to use. Defaults to ``'Q1'``.
+        :type start_element: str, optional
+        """
 
         super().__init__(thickness, material_name, model, kx_mod, ky_mod, start_node, start_element)
 
@@ -961,8 +1172,15 @@ class AnnulusMesh(Mesh):
         
         # self.generate()
     
+    def __repr__(self) -> str:
+        return f"AnnulusMesh(material_name={self.material_name!r}, outer_radius={self.outer_radius}, inner_radius={self.inner_radius}, thickness={self.thickness})"
+
     def generate(self) -> None:
         
+        # Remove old mesh elements and nodes from the model if regenerating
+        if self.is_generated:
+            self._remove_from_model()
+
         mesh_size = self.mesh_size
         r_outer = self.outer_radius
         r_inner = self.inner_radius
@@ -990,7 +1208,7 @@ class AnnulusMesh(Mesh):
                 transition = False
         
             # Create a mesh of nodes for the ring
-            if transition is True:
+            if transition == True:
                 ring = AnnulusTransRingMesh(r_inner + h_rad, r_inner, n_circ, self.thickness, self.material_name, self.model, self.kx_mod, self.ky_mod,
                                             self.origin, self.axis, 'N' + str(n), 'Q' + str(q))
                 n += 3*n_circ
@@ -1035,6 +1253,7 @@ class AnnulusMesh(Mesh):
         
         # Flag the mesh as generated
         self.is_generated = True
+        self.needs_update = False
 
 #%%
 class AnnulusRingMesh(Mesh):
@@ -1044,6 +1263,34 @@ class AnnulusRingMesh(Mesh):
 
     def __init__(self, outer_radius: float, inner_radius: float, num_quads: int, thickness: float, material_name: str, model: FEModel3D, kx_mod: float = 1, ky_mod: float = 1,
                  origin: List[float] = [0, 0, 0], axis: str = 'Y', start_node: str = 'N1', start_element: str = 'Q1') -> None:
+
+        """Single annular ring of quads between two radii.
+
+        :param outer_radius: Outer radius of the ring.
+        :type outer_radius: float
+        :param inner_radius: Inner radius of the ring.
+        :type inner_radius: float
+        :param num_quads: Number of quads around the ring.
+        :type num_quads: int
+        :param thickness: Element thickness.
+        :type thickness: float
+        :param material_name: Name of the element material.
+        :type material_name: str
+        :param model: Owning FEModel3D.
+        :type model: FEModel3D
+        :param kx_mod: In-plane stiffness modifier (local x). Defaults to 1.
+        :type kx_mod: float, optional
+        :param ky_mod: In-plane stiffness modifier (local y). Defaults to 1.
+        :type ky_mod: float, optional
+        :param origin: Local origin in global coordinates ``[X, Y, Z]``. Defaults to ``[0, 0, 0]``.
+        :type origin: list[float], optional
+        :param axis: Global axis: ``'X'``, ``'Y'``, or ``'Z'``. Defaults to ``'Y'``.
+        :type axis: str, optional
+        :param start_node: First node name. Defaults to ``'N1'``.
+        :type start_node: str, optional
+        :param start_element: First element name. Defaults to ``'Q1'``.
+        :type start_element: str, optional
+        """
 
         super().__init__(thickness, material_name, model, kx_mod, ky_mod, start_node=start_node,
                          start_element=start_element)
@@ -1060,7 +1307,14 @@ class AnnulusRingMesh(Mesh):
         # Generate the nodes and elements
         self.generate()
 
+    def __repr__(self) -> str:
+        return f"AnnulusRingMesh(material_name={self.material_name!r}, outer_radius={self.outer_radius}, inner_radius={self.inner_radius}, thickness={self.thickness})"
+
     def generate(self) -> None:
+
+        # Remove old mesh elements and nodes from the model if regenerating
+        if self.is_generated:
+            self._remove_from_model()
 
         n = self.n  # Number of plates in the initial ring
 
@@ -1124,7 +1378,7 @@ class AnnulusRingMesh(Mesh):
                 else:
                     raise Exception('Invalid axis specified for AnnulusRingMesh.')
             
-            self.nodes[node_name] = Node3D(node_name, x, y, z)
+            self.nodes[node_name] = Node3D(self.model, node_name, x, y, z)
 
         # Generate the elements that make up the ring
         for i in range(1, n + 1, 1):
@@ -1160,23 +1414,41 @@ class AnnulusRingMesh(Mesh):
         
         # Flag the mesh as generated
         self.is_generated = True
+        self.needs_update = False
 
-#%%
+
 class AnnulusTransRingMesh(Mesh):
     """
-    A mesh of quadrilaterals forming an annular ring (a donut) with the mesh getting finer on the outer
-    edge.
+    A mesh of quadrilaterals forming an annular ring (a donut) with the mesh transitioning to a finer on the outer edge.
     """
 
-    def __init__(self, outer_radius: float, inner_radius: float, num_inner_quads: int, thickness: float, material_name: str, model: FEModel3D,
-                 kx_mod: float = 1, ky_mod: float = 1, origin: List[float] = [0, 0, 0], axis: str = 'Y', start_node: str = 'N1',
-                 start_element: str = 'Q1') -> None:
-        """
-        Parameters
-        ----------
+    def __init__(self, outer_radius: float, inner_radius: float, num_inner_quads: int, thickness: float, material_name: str, model: FEModel3D, kx_mod: float = 1, ky_mod: float = 1, origin: List[float] = [0, 0, 0], axis: str = 'Y', start_node: str = 'N1', start_element: str = 'Q1') -> None:
+        """Creates an annular ring (a donut) with the mesh transitioning to a finer mesh on the outer edge
 
-        direction : array
-            A vector indicating the direction normal to the ring.
+        :param outer_radius: The outer radius of the annular ring.
+        :type outer_radius: float
+        :param inner_radius: The inner radius of the annular ring.
+        :type inner_radius: float
+        :param num_inner_quads: The number of quadrilaterals to make the inner ring out of.
+        :type num_inner_quads: int
+        :param thickness: The thickness of each element in the ring.
+        :type thickness: float
+        :param material_name: The name of the material for the elements in the ring.
+        :type material_name: str
+        :param model: The model the ring belongs to.
+        :type model: FEModel3D
+        :param kx_mod: In-plane stiffness modifier for the elements in the circumferential direction. Defaults to 1.
+        :type kx_mod: float, optional
+        :param ky_mod: In-plane stiffness modifier for the elements in the radial direction. Defaults to 1.
+        :type ky_mod: float, optional
+        :param origin: The center of the annulus. Defaults to [0, 0, 0].
+        :type origin: List[float], optional
+        :param axis: The global axis to generate the annulus about. Defaults to 'Y'.
+        :type axis: str, optional
+        :param start_node: The name of the first node in the mesh. Defaults to 'N1'.
+        :type start_node: str, optional
+        :param start_element: The name of the first element in the mesh. Defaults to 'Q1'.
+        :type start_element: str, optional
         """
 
         super().__init__(thickness, material_name, model, kx_mod, ky_mod, start_node=start_node,
@@ -1194,7 +1466,14 @@ class AnnulusTransRingMesh(Mesh):
         # Create the mesh
         self.generate()
 
+    def __repr__(self) -> str:
+        return f"AnnulusTransRingMesh(material_name={self.material_name!r}, outer_radius={self.r3}, inner_radius={self.inner_radius}, thickness={self.thickness})"
+
     def generate(self) -> None:
+
+        # Remove old mesh elements and nodes from the model if regenerating
+        if self.is_generated:
+            self._remove_from_model()
 
         n = self.n  # Number of plates in the outside of the ring (coarse mesh)
 
@@ -1284,7 +1563,7 @@ class AnnulusTransRingMesh(Mesh):
                 else:
                     raise Exception('Invalid axis specified for AnnulusTransRingMesh.')
             
-            self.nodes[node_name] = Node3D(node_name, x, y, z)
+            self.nodes[node_name] = Node3D(self.model, node_name, x, y, z)
 
         # Generate the elements that make up the ring
         for i in range(1, 4*n + 1, 1):
@@ -1338,8 +1617,9 @@ class AnnulusTransRingMesh(Mesh):
         
         # Flag the mesh as generated
         self.is_generated = True
+        self.needs_update = False
 
-#%%
+
 class FrustrumMesh(AnnulusMesh):
     """
     A mesh of quadrilaterals forming a frustrum (a cone intersected by a horizontal plane).
@@ -1347,13 +1627,45 @@ class FrustrumMesh(AnnulusMesh):
 
     def __init__(self, mesh_size: float, large_radius: float, small_radius: float, height: float, thickness: float, material_name: str, model: FEModel3D, kx_mod: float = 1, ky_mod: float = 1,
                  origin: List[float] = [0, 0, 0], axis: str = 'Y', start_node: str = 'N1', start_element: str = 'Q1') -> None:
-        
+        """Conical frustum mesh generated from an annulus and then tapered to height.
+
+        :param mesh_size: Target element size for the base annulus.
+        :type mesh_size: float
+        :param large_radius: Large radius (base) of the frustum.
+        :type large_radius: float
+        :param small_radius: Small radius (top) of the frustum.
+        :type small_radius: float
+        :param height: Frustum height along ``axis``.
+        :type height: float
+        :param thickness: Element thickness.
+        :type thickness: float
+        :param material_name: Name of the element material.
+        :type material_name: str
+        :param model: Owning FEModel3D.
+        :type model: FEModel3D
+        :param kx_mod: In-plane stiffness modifier (local x). Defaults to 1.
+        :type kx_mod: float, optional
+        :param ky_mod: In-plane stiffness modifier (local y). Defaults to 1.
+        :type ky_mod: float, optional
+        :param origin: Local origin in global coordinates ``[X, Y, Z]``. Defaults to ``[0, 0, 0]``.
+        :type origin: list[float], optional
+        :param axis: Global axis: ``'X'``, ``'Y'``, or ``'Z'``. Defaults to ``'Y'``.
+        :type axis: str, optional
+        :param start_node: First node name. Defaults to ``'N1'``.
+        :type start_node: str, optional
+        :param start_element: First element name. Defaults to ``'Q1'``.
+        :type start_element: str, optional
+        """
+
         # Create an annulus mesh
         super().__init__(mesh_size, large_radius, small_radius, thickness, material_name, model, kx_mod,
                          ky_mod, origin, axis, start_node, start_element)
         
         self.height = height
     
+    def __repr__(self) -> str:
+        return f"FrustrumMesh(material_name={self.material_name!r}, large_radius={self.outer_radius}, small_radius={self.inner_radius}, height={self.height}, thickness={self.thickness})"
+
     def generate(self) -> None:
 
         super().generate()
@@ -1389,49 +1701,40 @@ class FrustrumMesh(AnnulusMesh):
 
 #%%
 class CylinderMesh(Mesh):
-    """
-    A mesh of quadrilaterals forming a cylinder.
-
-    The mesh is formed with the local y-axis of the elements pointed toward
-    the base of the cylinder 
-
-    Parameters
-    ----------
-
-    mesh_size : number
-        The desired mesh element edge size. This value will only be used to mesh vertically if `num_elements` is
-        specified. Otherwise it will be used to mesh the circumference too.
-    radius : number
-        The radius of the cylinder to the element centers
-    height : number
-        Total height of the cylinder.
-    thickness : number
-        Element thickness.
-    material_name : string
-        The name of the element material.
-    kx_mod : number
-        Stiffness modification factor for in-plane stiffness in the element's local
-        x-direction. Default value is 1.0 (no modification).
-    ky_mod : number
-        Stiffness modification factor for in-plane stiffness in the element's local
-        y-direction. Default value is 1.0 (no modification).
-    start_node : string, optional
-        The name of the first node in the mesh. The name must be formatted starting with a single
-        letter followed by a number (e.g. 'N12'). The mesh will begin numbering nodes from this
-        number. The default is 'N1'. 
-    start_element : string, optional
-        The name of the first element in the mesh. The name must be formatted starting with a
-        single letter followed by a number (e.g. 'Q32'). The mesh will begin numbering elements
-        from this number. The default is 'Q1'.
-    num_elements : number, optional
-        The number of quadrilaterals to divide the circumference into. If this value is omitted
-        `mesh_size` will be used instead to calculate the number of quadrilaterals in the
-        circumference. The default is `None`.
-    element_type : string
-        The type of element to use for the mesh: 'Quad' or 'Rect'
-    """
 
     def __init__(self, mesh_size: float, radius: float, height: float, thickness: float, material_name: str, model: FEModel3D, kx_mod: float = 1, ky_mod: float = 1,origin: List[float] = [0, 0, 0], axis: str = 'Y', start_node: str = 'N1', start_element: str = 'Q1', num_elements: int | None = None, element_type: str = 'Quad') -> None:
+
+        """Cylindrical shell mesh.
+
+        :param mesh_size: Target element edge size. If ``num_elements`` is provided, used only for vertical division; otherwise used to compute circumferential division too.
+        :type mesh_size: float
+        :param radius: Cylinder radius to element centers.
+        :type radius: float
+        :param height: Total height of the cylinder.
+        :type height: float
+        :param thickness: Element thickness.
+        :type thickness: float
+        :param material_name: Name of the element material.
+        :type material_name: str
+        :param model: Owning FEModel3D.
+        :type model: FEModel3D
+        :param kx_mod: In-plane stiffness modifier (local x). Defaults to 1.
+        :type kx_mod: float, optional
+        :param ky_mod: In-plane stiffness modifier (local y). Defaults to 1.
+        :type ky_mod: float, optional
+        :param origin: Local origin in global coordinates ``[X, Y, Z]``. Defaults to ``[0, 0, 0]``.
+        :type origin: list[float], optional
+        :param axis: Global axis about which the mesh is generated: ``'X'``, ``'Y'``, or ``'Z'``. Defaults to ``'Y'``.
+        :type axis: str, optional
+        :param start_node: First node name (e.g., ``'N1'``). Defaults to ``'N1'``.
+        :type start_node: str, optional
+        :param start_element: First element name (e.g., ``'Q1'``). Defaults to ``'Q1'``.
+        :type start_element: str, optional
+        :param num_elements: Optional number of quads around the circumference (overrides automatic calculation from ``mesh_size``).
+        :type num_elements: int | None, optional
+        :param element_type: Element family for the mesh: ``'Quad'`` or ``'Rect'``. Defaults to ``'Quad'``.
+        :type element_type: str, optional
+        """
 
         # Inherit properties and methods from the parent `Mesh` class
         super().__init__(thickness, material_name, model, kx_mod, ky_mod, start_node, start_element)
@@ -1457,8 +1760,15 @@ class CylinderMesh(Mesh):
         # Generate the mesh
         self.generate()
     
+    def __repr__(self) -> str:
+        return f"CylinderMesh(material_name={self.material_name!r}, radius={self.radius}, height={self.h}, thickness={self.thickness})"
+
     def generate(self) -> None:
         
+        # Remove old mesh elements and nodes from the model if regenerating
+        if self.is_generated:
+            self._remove_from_model()
+
         # Get the mesh thickness and the material name
         thickness = self.thickness
         material_name = self.material_name
@@ -1531,6 +1841,7 @@ class CylinderMesh(Mesh):
         
         # Flag the mesh as generated
         self.is_generated = True
+        self.needs_update = False
 
 #%%
 class CylinderRingMesh(Mesh):
@@ -1591,10 +1902,17 @@ class CylinderRingMesh(Mesh):
         # Generate the nodes and elements
         self.generate()
 
+    def __repr__(self) -> str:
+        return f"CylinderRingMesh(material_name={self.material_name!r}, radius={self.radius}, height={self.height}, thickness={self.thickness})"
+
     def generate(self) -> None:
         """
         Generates the nodes and elements in the mesh.
         """
+
+        # Remove old mesh elements and nodes from the model if regenerating
+        if self.is_generated:
+            self._remove_from_model()
 
         num_elements = self.num_elements  # Number of quadrilaterals in the ring
         n = self.num_elements
@@ -1666,7 +1984,7 @@ class CylinderRingMesh(Mesh):
                 else:
                     raise Exception('Invalid axis specified for CylinderRingMesh.')
             
-            self.nodes[node_name] = Node3D(node_name, x, y, z)
+            self.nodes[node_name] = Node3D(self.model, node_name, x, y, z)
 
         # Generate the elements that make up the ring
         for i in range(1, n + 1, 1):
@@ -1715,6 +2033,7 @@ class CylinderRingMesh(Mesh):
             
         # Flag the mesh as generated
         self.is_generated = True
+        self.needs_update = False
         
 def check_mesh_integrity(mesh: Mesh, console_log: bool = True) -> Union[str, List[str], None]:
     """Runs basic integrity checks to ensure the mesh is in sync with its model. Usually you don't
@@ -1840,9 +2159,11 @@ def check_mesh_integrity(mesh: Mesh, console_log: bool = True) -> Union[str, Lis
         errors = ['No errors detected.']
 
     # Return the error messages
-    if console_log is True:
+    if console_log == True:
         for error in errors:
             print(error)
             return ''
     else:
         return errors
+
+

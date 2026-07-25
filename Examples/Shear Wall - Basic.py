@@ -5,6 +5,8 @@
 # isn't nearly as accurate as the finite element method, so some differences
 # in the final results are expected.
 
+# Note: This example builds the wall from scratch. Pynite has a newer shear wall feature to assist in building shear walls. See the `Shear Wall - Advanced.py` file for an example of that feature.
+
 # Import a few libraries from Pynite that we'll need
 from Pynite.FEModel3D import FEModel3D
 from math import isclose
@@ -81,14 +83,13 @@ model.add_load_combo('Seismic', {'E': 1.0})
 model.analyze(log=True, check_statics=True)
 
 # Render the model and plot the `Txy` shears.
-# window = render_model(model, annotation_size=1, render_loads=True, deformed_shape=True,
+# window = render_model(model, render_loads=True, deformed_shape=True,
 #                       deformed_scale=200, color_map='Txy', scalar_bar=False,
 #                       combo_name='Seismic', labels=False, screenshot='console')
 from Pynite.Rendering import Renderer
 renderer = Renderer(model)
 renderer.combo_name = 'Seismic'
 renderer.color_map = 'Txy'
-renderer.annotation_size = 1
 renderer.deformed_shape = True
 renderer.deformed_scale = 200
 renderer.scalar_bar = True

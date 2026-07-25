@@ -1,6 +1,6 @@
-====================
+==============================================
 P-:math:`\Delta` and P-:math:`\delta` Analysis
-====================
+==============================================
 
 When a structure is loaded, it displaces. Once a structure has displaced, the forces act on a geometry that is different than the geometry that was initially analyzed. Secondary forces develop due to eccentricities created by these displacements. These secondary forces are known collectively as P-:math:`\Delta` and P-:math:`\delta` effects.
 
@@ -8,7 +8,7 @@ P-:math:`\Delta` effects are secondary forces that develop due to the displaceme
 
 There are traditionally 2 types of procedures used to run P-:math:`\Delta` analysis:
 1. The iterative procedure - A basic analysis is rerun considering the effects of the displaced goemetry, leading to further displacements. These further displacements require further iterations until the displacements either converge or diverge.
-2. Use of the geometric stiffness matrix `Kg`- A stiffness matrix that adjusts member stiffnesses for the effects of member axial loads is added to the overall stiffness matrix. This method allows for a direct linear solution if the axial load on the members is known in advance.
+2. Use of the geometric stiffness matrix `Kg` - A geometric stiffness matrix is added to the overall elastic stiffness matrix `Ke`. This adjusts member stiffnesses for the effects of member axial loads and allows for a direct linear solution if the axial load on the members is known in advance.
 
 P-:math:`\delta` effects can be captured by modeling additional nodes along the members length. This forces the analysis to track member internal displacements at the nodes during analysis. In most cases only 2 or 3 intermediate nodes are required. AISC has published an good engineering journal article discussing this method.
 
@@ -40,6 +40,6 @@ AISC has provided benchmark tests found in AISC 360-16 commentary C2.1 that can 
 
 Limitations
 ===========
-*Note that P-:math:`\Delta` and P-:math:`\delta` analysis is just one part of an overall second-order analysis. See the building code for additional requirements that may be applicable, such as stiffness reductions and notional loads.
+Note that P-:math:`\Delta` and P-:math:`\delta` analysis is just one part of an overall second-order analysis. See the building code for additional requirements that may be applicable, such as stiffness reductions and notional loads.
 
-*P-:math:`\Delta` effects are not considered for plate elements.
+P-:math:`\Delta` effects are not considered for plate elements.

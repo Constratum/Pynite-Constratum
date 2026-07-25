@@ -10,22 +10,12 @@ if TYPE_CHECKING:
     from Pynite.FEModel3D import FEModel3D
     from Pynite.Node3D import Node3D
 
-# %%
-class Plate3D:
+#%%
+class Plate3D():
 
-    def __init__(
-        self,
-        name: str,
-        i_node: Node3D,
-        j_node: Node3D,
-        m_node: Node3D,
-        n_node: Node3D,
-        t: float,
-        material_name: str,
-        model: FEModel3D,
-        kx_mod: float = 1.0,
-        ky_mod: float = 1.0,
-    ):
+    def __init__(self, name: str, i_node: Node3D, j_node: Node3D, m_node: Node3D, n_node: Node3D, 
+                 t: float, material_name: str, model: FEModel3D, kx_mod: float = 1.0,
+                 ky_mod: float = 1.0):
         """
         A rectangular plate element
 
@@ -57,7 +47,7 @@ class Plate3D:
 
         self.name: str = name
         self.ID: Optional[int] = None
-        self.type: str = "Rect"
+        self.type: str = 'Rect'
 
         self.i_node: Node3D = i_node
         self.j_node: Node3D = j_node
@@ -65,13 +55,11 @@ class Plate3D:
         self.n_node: Node3D = n_node
 
         self.t: float = t
-
+        
         self.kx_mod: float = kx_mod
         self.ky_mod: float = ky_mod
 
-        self.pressures: List[Tuple[float, str]] = (
-            []
-        )  # A list of surface pressures [pressure, case='Case 1']
+        self.pressures: List[Tuple[float, str]] = []  # A list of surface pressures [pressure, case='Case 1']
 
         # Plates need a link to the model they belong to
         self.model: FEModel3D = model
@@ -81,11 +69,10 @@ class Plate3D:
             self.E: float = self.model.materials[material_name].E
             self.nu: float = self.model.materials[material_name].nu
         except:
-            raise KeyError(
-                "Please define the material "
-                + str(material_name)
-                + " before assigning it to plates."
-            )
+            raise KeyError('Please define the material ' + str(material_name) + ' before assigning it to plates.')
+    
+    def __repr__(self) -> str:
+        return f"Plate3D(name={self.name!r}, i_node={self.i_node.name!r}, j_node={self.j_node.name!r}, m_node={self.m_node.name!r}, n_node={self.n_node.name!r})"
 
     def width(self) -> float:
         """
@@ -98,7 +85,7 @@ class Plate3D:
         Returns the height of the plate along its local y-axis
         """
         return self.i_node.distance(self.n_node)
-
+    
     def Dm(self) -> NDArray[float64]:
         """
         Returns the plane stress constitutive matrix for orthotropic materials [Dm]
@@ -108,27 +95,19 @@ class Plate3D:
         # behavior. Stiffness modification factors of 1.0 in each direction (the default) will
         # model isotropic behavior. Orthotropic behavior is limited to the element's local
         # coordinate system.
-        Ex = self.E * self.kx_mod
-        Ey = self.E * self.ky_mod
+        Ex = self.E*self.kx_mod
+        Ey = self.E*self.ky_mod
         nu_xy = self.nu
         nu_yx = self.nu
 
         # The shear modulus will be unafected by orthotropic behavior
         # Logan, Appendix C.3, page 750
-        G = self.E / (2 * (1 + self.nu))
+        G = self.E/(2*(1 + self.nu))
 
         # Calculate the constitutive matrix [Dm]
-        Dm = (
-            1
-            / (1 - nu_xy * nu_yx)
-            * array(
-                [
-                    [Ex, nu_yx * Ex, 0],
-                    [nu_xy * Ey, Ey, 0],
-                    [0, 0, (1 - nu_xy * nu_yx) * G],
-                ]
-            )
-        )
+        Dm = 1/(1 - nu_xy*nu_yx)*array([[   Ex,    nu_yx*Ex,            0             ],
+                                        [nu_xy*Ey,    Ey,               0             ],
+                                        [   0,        0,     (1 - nu_xy*nu_yx)*G]])
 
         # Return the constitutive matrix [Dm]
         return Dm
@@ -142,55 +121,30 @@ class Plate3D:
         t = self.t
         nu_xy = self.nu
         nu_yx = self.nu
-        Ex = self.E * self.kx_mod
-        Ey = self.E * self.ky_mod
-        G = self.E / (2 * (1 + self.nu))
+        Ex = self.E*self.kx_mod
+        Ey = self.E*self.ky_mod
+        G = self.E/(2*(1 + self.nu))
 
         # Calculate the constitutive matrix [Db]
-        Db = (
-            t**3
-            / (12 * (1 - nu_xy * nu_yx))
-            * array([[Ex, nu_yx * Ex, 0], [nu_xy * Ey, Ey, 0], [0, 0, G]])
-        )
+        Db = t**3/(12*(1 - nu_xy*nu_yx))*array([[   Ex,    nu_yx*Ex, 0],
+                                                [nu_xy*Ey,    Ey,    0],
+                                                [   0,        0,     G]])
 
         # Return the constitutive matrix [Db]
         return Db
 
     def J(self, r: float, s: float) -> NDArray[float64]:
-        """
+        '''
         Returns the Jacobian matrix for the element
-        """
-
+        '''
+        
         # Get the local coordinates for the element's nodes
-        x1, y1, x2, y2, x3, y3, x4, y4 = (
-            0,
-            0,
-            self.width(),
-            0,
-            self.width(),
-            self.height(),
-            0,
-            self.height(),
-        )
+        x1, y1, x2, y2, x3, y3, x4, y4 = 0, 0, self.width(), 0, self.width(), self.height(), 0, self.height()
 
         # Return the Jacobian matrix
-        return (
-            1
-            / 4
-            * array(
-                [
-                    [
-                        x1 * (s - 1) - x2 * (s - 1) + x3 * (s + 1) - x4 * (s + 1),
-                        y1 * (s - 1) - y2 * (s - 1) + y3 * (s + 1) - y4 * (s + 1),
-                    ],
-                    [
-                        x1 * (r - 1) - x2 * (r + 1) + x3 * (r + 1) - x4 * (r - 1),
-                        y1 * (r - 1) - y2 * (r + 1) + y3 * (r + 1) - y4 * (r - 1),
-                    ],
-                ]
-            )
-        )
-
+        return 1/4*array([[x1*(s - 1) - x2*(s - 1) + x3*(s + 1) - x4*(s + 1), y1*(s - 1) - y2*(s - 1) + y3*(s + 1) - y4*(s + 1)],
+                          [x1*(r - 1) - x2*(r + 1) + x3*(r + 1) - x4*(r - 1), y1*(r - 1) - y2*(r + 1) + y3*(r + 1) - y4*(r - 1)]])
+    
     def B_m(self, r: float, s: float) -> NDArray[float64]:
 
         # Differentiate the interpolation functions
@@ -198,51 +152,34 @@ class Plate3D:
         # Row 2 = interpolation functions differentiated with respect to y
         # Note that the inverse of the Jacobian converts from derivatives with
         # respect to r and s to derivatives with respect to x and y
-        dH = matmul(
-            inv(self.J(r, s)),
-            1
-            / 4
-            * array([[s - 1, -s + 1, s + 1, -s - 1], [r - 1, -r - 1, r + 1, -r + 1]]),
-        )
+        dH = matmul(inv(self.J(r, s)), 1/4*array([[s - 1, -s + 1, s + 1, -s - 1],                 
+                                                  [r - 1, -r - 1, r + 1, -r + 1]]))
 
         # Reference 1, Example 5.5 (page 353)
-        B_m = array(
-            [
-                [dH[0, 0], 0, dH[0, 1], 0, dH[0, 2], 0, dH[0, 3], 0],
-                [0, dH[1, 0], 0, dH[1, 1], 0, dH[1, 2], 0, dH[1, 3]],
-                [
-                    dH[1, 0],
-                    dH[0, 0],
-                    dH[1, 1],
-                    dH[0, 1],
-                    dH[1, 2],
-                    dH[0, 2],
-                    dH[1, 3],
-                    dH[0, 3],
-                ],
-            ]
-        )
-
+        B_m = array([[dH[0, 0],    0,     dH[0, 1],    0,     dH[0, 2],    0,     dH[0, 3],    0    ],
+                     [   0,     dH[1, 0],    0,     dH[1, 1],    0,     dH[1, 2],    0,     dH[1, 3]],
+                     [dH[1, 0], dH[0, 0], dH[1, 1], dH[0, 1], dH[1, 2], dH[0, 2], dH[1, 3], dH[0, 3]]])
+        
         return B_m
-
-    def k(self) -> NDArray[float64]:
+    
+    def ke(self) -> NDArray[float64]:
         """
-        returns the plate's local stiffness matrix
+        Returns the plate's local elastic stiffness matrix.
         """
-        return add(self.k_b(), self.k_m())
-
-    def k_m(self) -> NDArray[float64]:
-        """
+        return add(self.ke_b(), self.ke_m())
+    
+    def ke_m(self) -> NDArray[float64]:
+        '''
         Returns the local stiffness matrix for membrane (in-plane) stresses.
 
         Plane stress is assumed
-        """
+        '''
 
         t = self.t
         Dm = self.Dm()
 
         # Define the gauss point for numerical integration
-        gp = 1 / 3**0.5
+        gp = 1/3**0.5
 
         # Get the membrane B matrices for each gauss point
         # Doing this now will save us from doing it twice below
@@ -252,14 +189,12 @@ class Plate3D:
         B4 = self.B_m(-gp, gp)
 
         # See reference 1 at the bottom of page 353, and reference 2 page 466
-        k = t * (
-            matmul(B1.T, matmul(Dm, B1)) * det(self.J(-gp, -gp))
-            + matmul(B2.T, matmul(Dm, B2)) * det(self.J(gp, -gp))
-            + matmul(B3.T, matmul(Dm, B3)) * det(self.J(gp, gp))
-            + matmul(B4.T, matmul(Dm, B4)) * det(self.J(-gp, gp))
-        )
-
-        k_exp = zeros((24, 24))
+        ke = t*(matmul(B1.T, matmul(Dm, B1))*det(self.J(-gp, -gp)) +
+               matmul(B2.T, matmul(Dm, B2))*det(self.J(gp, -gp)) +
+               matmul(B3.T, matmul(Dm, B3))*det(self.J(gp, gp)) +
+               matmul(B4.T, matmul(Dm, B4))*det(self.J(-gp, gp)))
+        
+        ke_exp = zeros((24, 24))
 
         # Step through each term in the unexpanded stiffness matrix
         # i = Unexpanded matrix row
@@ -267,643 +202,73 @@ class Plate3D:
 
             # j = Unexpanded matrix column
             for j in range(8):
-
+                
                 # Find the corresponding term in the expanded stiffness
                 # matrix
 
                 # m = Expanded matrix row
                 if i in [0, 2, 4, 6]:  # indices associated with displacement in x
-                    m = i * 3
+                    m = i*3
                 if i in [1, 3, 5, 7]:  # indices associated with displacement in y
-                    m = i * 3 - 2
+                    m = i*3 - 2
 
                 # n = Expanded matrix column
                 if j in [0, 2, 4, 6]:  # indices associated with displacement in x
-                    n = j * 3
+                    n = j*3
                 if j in [1, 3, 5, 7]:  # indices associated with displacement in y
-                    n = j * 3 - 2
-
+                    n = j*3 - 2
+                
                 # Ensure the indices are integers rather than floats
                 m, n = round(m), round(n)
 
                 # Add the term from the unexpanded matrix into the expanded matrix
-                k_exp[m, n] = k[i, j]
-
-        return k_exp
-
-    def k_b(self) -> NDArray[float64]:
+                ke_exp[m, n] = ke[i, j]
+        
+        return ke_exp
+    
+    def ke_b(self) -> NDArray[float64]:
         """
-        Returns the local stiffness matrix for bending
+        Returns the local elastic stiffness matrix for bending.
         """
 
-        b = self.width() / 2
-        c = self.height() / 2
+        b = self.width()/2
+        c = self.height()/2
 
         Ex = self.E
         Ey = self.E
         nu_xy = self.nu
         nu_yx = self.nu
-        G = self.E / (2 * (1 + self.nu))
+        G = self.E/(2*(1 + self.nu))
         t = self.t
 
         # Stiffness matrix for plate bending. This matrix was derived using a jupyter notebook. The
         # notebook can be found in the `Derivations`` folder of this project.
-        k = (
-            t**3
-            / 12
-            * array(
-                [
-                    [
-                        (
-                            -Ex * nu_yx * b**2 * c**2 / 4
-                            - Ex * c**4
-                            - Ey * nu_xy * b**2 * c**2 / 4
-                            - Ey * b**4
-                            + 7 * G * nu_xy * nu_yx * b**2 * c**2 / 5
-                            - 7 * G * b**2 * c**2 / 5
-                        )
-                        / (b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * nu_yx * c**2 / 2
-                            - Ey * b**2
-                            + G * nu_xy * nu_yx * c**2 / 5
-                            - G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (
-                            Ex * c**2
-                            + Ey * nu_xy * b**2 / 2
-                            - G * nu_xy * nu_yx * b**2 / 5
-                            + G * b**2 / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            5 * Ex * nu_yx * b**2 * c**2
-                            + 20 * Ex * c**4
-                            + 5 * Ey * nu_xy * b**2 * c**2
-                            - 10 * Ey * b**4
-                            - 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            + 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (
-                            Ex * nu_yx * c**2 / 2
-                            - Ey * b**2 / 2
-                            - G * nu_xy * nu_yx * c**2 / 5
-                            + G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (5 * Ex * c**2 - G * nu_xy * nu_yx * b**2 + G * b**2)
-                        / (5 * b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            -5 * Ex * nu_yx * b**2 * c**2
-                            + 10 * Ex * c**4
-                            - 5 * Ey * nu_xy * b**2 * c**2
-                            + 10 * Ey * b**4
-                            + 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            - 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (-Ey * b**2 / 2 - G * nu_xy * nu_yx * c**2 / 5 + G * c**2 / 5)
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (Ex * c**2 / 2 + G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            5 * Ex * nu_yx * b**2 * c**2
-                            - 10 * Ex * c**4
-                            + 5 * Ey * nu_xy * b**2 * c**2
-                            + 20 * Ey * b**4
-                            - 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            + 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (-5 * Ey * b**2 + G * nu_xy * nu_yx * c**2 - G * c**2)
-                        / (5 * b * c**2 * (nu_xy * nu_yx - 1)),
-                        (
-                            Ex * c**2 / 2
-                            - Ey * nu_xy * b**2 / 2
-                            + G * b**2 * (nu_xy * nu_yx - 1) / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                    ],
-                    [
-                        (
-                            -Ey * nu_xy * c**2 / 2
-                            - Ey * b**2
-                            + G * nu_xy * nu_yx * c**2 / 5
-                            - G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        4
-                        * (-5 * Ey * b**2 + 2 * G * nu_xy * nu_yx * c**2 - 2 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        Ey * nu_xy / (nu_xy * nu_yx - 1),
-                        (
-                            Ey * nu_xy * c**2 / 2
-                            - Ey * b**2 / 2
-                            - G * nu_xy * nu_yx * c**2 / 5
-                            + G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        2
-                        * (-5 * Ey * b**2 - 4 * G * nu_xy * nu_yx * c**2 + 4 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (Ey * b**2 / 2 + G * nu_xy * nu_yx * c**2 / 5 - G * c**2 / 5)
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (-5 * Ey * b**2 + 2 * G * nu_xy * nu_yx * c**2 - 2 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (5 * Ey * b**2 - G * nu_xy * nu_yx * c**2 + G * c**2)
-                        / (5 * b * c**2 * (nu_xy * nu_yx - 1)),
-                        2
-                        * (-5 * Ey * b**2 - G * nu_xy * nu_yx * c**2 + G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                    ],
-                    [
-                        (
-                            Ex * nu_yx * b**2 / 2
-                            + Ex * c**2
-                            - G * nu_xy * nu_yx * b**2 / 5
-                            + G * b**2 / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        Ex * nu_yx / (nu_xy * nu_yx - 1),
-                        4
-                        * (-5 * Ex * c**2 + 2 * G * nu_xy * nu_yx * b**2 - 2 * G * b**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        (-5 * Ex * c**2 + G * nu_xy * nu_yx * b**2 - G * b**2)
-                        / (5 * b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        2
-                        * (-5 * Ex * c**2 - G * nu_xy * nu_yx * b**2 + G * b**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        -(Ex * c**2 / 2 + G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (-5 * Ex * c**2 + 2 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * nu_yx * b**2 / 2
-                            + Ex * c**2 / 2
-                            + G * nu_xy * nu_yx * b**2 / 5
-                            - G * b**2 / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        -(10 * Ex * c**2 + 8 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                    ],
-                    [
-                        (
-                            5 * Ex * nu_yx * b**2 * c**2
-                            + 20 * Ex * c**4
-                            + 5 * Ey * nu_xy * b**2 * c**2
-                            - 10 * Ey * b**4
-                            - 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            + 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (
-                            Ex * nu_yx * c**2 / 2
-                            - Ey * b**2 / 2
-                            - G * nu_xy * nu_yx * c**2 / 5
-                            + G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (-5 * Ex * c**2 + G * nu_xy * nu_yx * b**2 - G * b**2)
-                        / (5 * b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * nu_yx * b**2 * c**2 / 4
-                            - Ex * c**4
-                            - Ey * nu_xy * b**2 * c**2 / 4
-                            - Ey * b**4
-                            + 7 * G * nu_xy * nu_yx * b**2 * c**2 / 5
-                            - 7 * G * b**2 * c**2 / 5
-                        )
-                        / (b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * nu_yx * c**2 / 2
-                            - Ey * b**2
-                            + G * nu_xy * nu_yx * c**2 / 5
-                            - G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * c**2
-                            - Ey * nu_xy * b**2 / 2
-                            + G * nu_xy * nu_yx * b**2 / 5
-                            - G * b**2 / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            5 * Ex * nu_yx * b**2 * c**2
-                            - 10 * Ex * c**4
-                            + 5 * Ey * nu_xy * b**2 * c**2
-                            + 20 * Ey * b**4
-                            - 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            + 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (-5 * Ey * b**2 + G * nu_xy * nu_yx * c**2 - G * c**2)
-                        / (5 * b * c**2 * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * c**2 / 2
-                            + Ey * nu_xy * b**2 / 2
-                            - G * b**2 * (nu_xy * nu_yx - 1) / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            -5 * Ex * nu_yx * b**2 * c**2
-                            + 10 * Ex * c**4
-                            - 5 * Ey * nu_xy * b**2 * c**2
-                            + 10 * Ey * b**4
-                            + 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            - 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (-Ey * b**2 / 2 - G * nu_xy * nu_yx * c**2 / 5 + G * c**2 / 5)
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        -(Ex * c**2 / 2 + G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                    ],
-                    [
-                        (
-                            Ey * nu_xy * c**2 / 2
-                            - Ey * b**2 / 2
-                            - G * nu_xy * nu_yx * c**2 / 5
-                            + G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        2
-                        * (-5 * Ey * b**2 - 4 * G * nu_xy * nu_yx * c**2 + 4 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (
-                            -Ey * nu_xy * c**2 / 2
-                            - Ey * b**2
-                            + G * nu_xy * nu_yx * c**2 / 5
-                            - G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        4
-                        * (-5 * Ey * b**2 + 2 * G * nu_xy * nu_yx * c**2 - 2 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        -Ey * nu_xy / (nu_xy * nu_yx - 1),
-                        (5 * Ey * b**2 - G * nu_xy * nu_yx * c**2 + G * c**2)
-                        / (5 * b * c**2 * (nu_xy * nu_yx - 1)),
-                        2
-                        * (-5 * Ey * b**2 - G * nu_xy * nu_yx * c**2 + G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (Ey * b**2 / 2 + G * nu_xy * nu_yx * c**2 / 5 - G * c**2 / 5)
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (-5 * Ey * b**2 + 2 * G * nu_xy * nu_yx * c**2 - 2 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                    ],
-                    [
-                        (5 * Ex * c**2 - G * nu_xy * nu_yx * b**2 + G * b**2)
-                        / (5 * b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        2
-                        * (-5 * Ex * c**2 - G * nu_xy * nu_yx * b**2 + G * b**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * nu_yx * b**2 / 2
-                            - Ex * c**2
-                            + G * nu_xy * nu_yx * b**2 / 5
-                            - G * b**2 / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        -Ex * nu_yx / (nu_xy * nu_yx - 1),
-                        4
-                        * (-5 * Ex * c**2 + 2 * G * nu_xy * nu_yx * b**2 - 2 * G * b**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        (
-                            Ex * nu_yx * b**2 / 2
-                            - Ex * c**2 / 2
-                            - G * nu_xy * nu_yx * b**2 / 5
-                            + G * b**2 / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        -(10 * Ex * c**2 + 8 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        (Ex * c**2 / 2 + G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (-5 * Ex * c**2 + 2 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                    ],
-                    [
-                        (
-                            -5 * Ex * nu_yx * b**2 * c**2
-                            + 10 * Ex * c**4
-                            - 5 * Ey * nu_xy * b**2 * c**2
-                            + 10 * Ey * b**4
-                            + 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            - 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (Ey * b**2 / 2 + G * nu_xy * nu_yx * c**2 / 5 - G * c**2 / 5)
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        -(Ex * c**2 / 2 + G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            5 * Ex * nu_yx * b**2 * c**2
-                            - 10 * Ex * c**4
-                            + 5 * Ey * nu_xy * b**2 * c**2
-                            + 20 * Ey * b**4
-                            - 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            + 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (5 * Ey * b**2 - G * nu_xy * nu_yx * c**2 + G * c**2)
-                        / (5 * b * c**2 * (nu_xy * nu_yx - 1)),
-                        (
-                            -5 * Ex * c**2
-                            - 25 * Ey * nu_xy * b**2
-                            + 2 * b**2 * (15 * Ey * nu_xy - G * nu_xy * nu_yx + G)
-                        )
-                        / (10 * b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * nu_yx * b**2 * c**2 / 4
-                            - Ex * c**4
-                            - Ey * nu_xy * b**2 * c**2 / 4
-                            - Ey * b**4
-                            + 7 * G * nu_xy * nu_yx * b**2 * c**2 / 5
-                            - 7 * G * b**2 * c**2 / 5
-                        )
-                        / (b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (
-                            Ex * nu_yx * c**2 / 2
-                            + Ey * b**2
-                            - G * nu_xy * nu_yx * c**2 / 5
-                            + G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * c**2
-                            - Ey * nu_xy * b**2 / 2
-                            + G * b**2 * (nu_xy * nu_yx - 1) / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            5 * Ex * nu_yx * b**2 * c**2
-                            + 20 * Ex * c**4
-                            + 5 * Ey * nu_xy * b**2 * c**2
-                            - 10 * Ey * b**4
-                            - 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            + 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * nu_yx * c**2 / 2
-                            + Ey * b**2 / 2
-                            + G * nu_xy * nu_yx * c**2 / 5
-                            - G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (-Ex * c**2 + G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                    ],
-                    [
-                        (-Ey * b**2 / 2 - G * nu_xy * nu_yx * c**2 / 5 + G * c**2 / 5)
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (-5 * Ey * b**2 + 2 * G * nu_xy * nu_yx * c**2 - 2 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (-5 * Ey * b**2 + G * nu_xy * nu_yx * c**2 - G * c**2)
-                        / (5 * b * c**2 * (nu_xy * nu_yx - 1)),
-                        2
-                        * (-5 * Ey * b**2 - G * nu_xy * nu_yx * c**2 + G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (
-                            Ey * nu_xy * c**2 / 2
-                            + Ey * b**2
-                            - G * nu_xy * nu_yx * c**2 / 5
-                            + G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        4
-                        * (-5 * Ey * b**2 + 2 * G * nu_xy * nu_yx * c**2 - 2 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        Ey * nu_xy / (nu_xy * nu_yx - 1),
-                        (
-                            -Ey * nu_xy * c**2 / 2
-                            + Ey * b**2 / 2
-                            + G * nu_xy * nu_yx * c**2 / 5
-                            - G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        2
-                        * (-5 * Ey * b**2 - 4 * G * nu_xy * nu_yx * c**2 + 4 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                    ],
-                    [
-                        (Ex * c**2 / 2 + G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (-5 * Ex * c**2 + 2 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        (
-                            Ex * nu_yx * b**2 / 2
-                            - Ex * c**2 / 2
-                            - G * nu_xy * nu_yx * b**2 / 5
-                            + G * b**2 / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        -(10 * Ex * c**2 + 8 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * nu_yx * b**2 / 2
-                            - Ex * c**2
-                            + G * nu_xy * nu_yx * b**2 / 5
-                            - G * b**2 / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        Ex * nu_yx / (nu_xy * nu_yx - 1),
-                        4
-                        * (-5 * Ex * c**2 + 2 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        (Ex * c**2 - G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        -(10 * Ex * c**2 + 2 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                    ],
-                    [
-                        (
-                            5 * Ex * nu_yx * b**2 * c**2
-                            - 10 * Ex * c**4
-                            + 5 * Ey * nu_xy * b**2 * c**2
-                            + 20 * Ey * b**4
-                            - 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            + 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (5 * Ey * b**2 - G * nu_xy * nu_yx * c**2 + G * c**2)
-                        / (5 * b * c**2 * (nu_xy * nu_yx - 1)),
-                        (
-                            5 * Ex * c**2
-                            + 25 * Ey * nu_xy * b**2
-                            - 2 * b**2 * (15 * Ey * nu_xy - G * nu_xy * nu_yx + G)
-                        )
-                        / (10 * b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            -5 * Ex * nu_yx * b**2 * c**2
-                            + 10 * Ex * c**4
-                            - 5 * Ey * nu_xy * b**2 * c**2
-                            + 10 * Ey * b**4
-                            + 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            - 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (Ey * b**2 / 2 + G * nu_xy * nu_yx * c**2 / 5 - G * c**2 / 5)
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (Ex * c**2 / 2 + G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            5 * Ex * nu_yx * b**2 * c**2
-                            + 20 * Ex * c**4
-                            + 5 * Ey * nu_xy * b**2 * c**2
-                            - 10 * Ey * b**4
-                            - 28 * G * nu_xy * nu_yx * b**2 * c**2
-                            + 28 * G * b**2 * c**2
-                        )
-                        / (20 * b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * nu_yx * c**2 / 2
-                            + Ey * b**2 / 2
-                            + G * nu_xy * nu_yx * c**2 / 5
-                            - G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (Ex * c**2 - G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        (
-                            -Ex * nu_yx * b**2 * c**2 / 4
-                            - Ex * c**4
-                            - Ey * nu_xy * b**2 * c**2 / 4
-                            - Ey * b**4
-                            + 7 * G * nu_xy * nu_yx * b**2 * c**2 / 5
-                            - 7 * G * b**2 * c**2 / 5
-                        )
-                        / (b**3 * c**3 * (nu_xy * nu_yx - 1)),
-                        (
-                            Ex * nu_yx * c**2 / 2
-                            + Ey * b**2
-                            - G * nu_xy * nu_yx * c**2 / 5
-                            + G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (
-                            Ex * c**2
-                            + Ey * nu_xy * b**2 / 2
-                            - G * b**2 * (nu_xy * nu_yx - 1) / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                    ],
-                    [
-                        (-5 * Ey * b**2 + G * nu_xy * nu_yx * c**2 - G * c**2)
-                        / (5 * b * c**2 * (nu_xy * nu_yx - 1)),
-                        2
-                        * (-5 * Ey * b**2 - G * nu_xy * nu_yx * c**2 + G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (-Ey * b**2 / 2 - G * nu_xy * nu_yx * c**2 / 5 + G * c**2 / 5)
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        (-5 * Ey * b**2 + 2 * G * nu_xy * nu_yx * c**2 - 2 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (
-                            -Ey * nu_xy * c**2 / 2
-                            + Ey * b**2 / 2
-                            + G * nu_xy * nu_yx * c**2 / 5
-                            - G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        2
-                        * (-5 * Ey * b**2 - 4 * G * nu_xy * nu_yx * c**2 + 4 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (
-                            Ey * nu_xy * c**2 / 2
-                            + Ey * b**2
-                            - G * nu_xy * nu_yx * c**2 / 5
-                            + G * c**2 / 5
-                        )
-                        / (b * c**2 * (nu_xy * nu_yx - 1)),
-                        4
-                        * (-5 * Ey * b**2 + 2 * G * nu_xy * nu_yx * c**2 - 2 * G * c**2)
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        -Ey * nu_xy / (nu_xy * nu_yx - 1),
-                    ],
-                    [
-                        (
-                            -Ex * nu_yx * b**2 / 2
-                            + Ex * c**2 / 2
-                            + G * nu_xy * nu_yx * b**2 / 5
-                            - G * b**2 / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        -(10 * Ex * c**2 + 8 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        -(Ex * c**2 / 2 + G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        (-5 * Ex * c**2 + 2 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        (-Ex * c**2 + G * b**2 * (nu_xy * nu_yx - 1) / 5)
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        0,
-                        -(10 * Ex * c**2 + 2 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                        (
-                            Ex * nu_yx * b**2 / 2
-                            + Ex * c**2
-                            - G * nu_xy * nu_yx * b**2 / 5
-                            + G * b**2 / 5
-                        )
-                        / (b**2 * c * (nu_xy * nu_yx - 1)),
-                        -Ex * nu_yx / (nu_xy * nu_yx - 1),
-                        4
-                        * (-5 * Ex * c**2 + 2 * G * b**2 * (nu_xy * nu_yx - 1))
-                        / (15 * b * c * (nu_xy * nu_yx - 1)),
-                    ],
-                ]
-            )
-        )
-
+        ke = t**3/12*array([[(-Ex*nu_yx*b**2*c**2/4 - Ex*c**4 - Ey*nu_xy*b**2*c**2/4 - Ey*b**4 + 7*G*nu_xy*nu_yx*b**2*c**2/5 - 7*G*b**2*c**2/5)/(b**3*c**3*(nu_xy*nu_yx - 1)), (-Ex*nu_yx*c**2/2 - Ey*b**2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (Ex*c**2 + Ey*nu_xy*b**2/2 - G*nu_xy*nu_yx*b**2/5 + G*b**2/5)/(b**2*c*(nu_xy*nu_yx - 1)), (5*Ex*nu_yx*b**2*c**2 + 20*Ex*c**4 + 5*Ey*nu_xy*b**2*c**2 - 10*Ey*b**4 - 28*G*nu_xy*nu_yx*b**2*c**2 + 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (Ex*nu_yx*c**2/2 - Ey*b**2/2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (5*Ex*c**2 - G*nu_xy*nu_yx*b**2 + G*b**2)/(5*b**2*c*(nu_xy*nu_yx - 1)), (-5*Ex*nu_yx*b**2*c**2 + 10*Ex*c**4 - 5*Ey*nu_xy*b**2*c**2 + 10*Ey*b**4 + 28*G*nu_xy*nu_yx*b**2*c**2 - 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (-Ey*b**2/2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (Ex*c**2/2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), (5*Ex*nu_yx*b**2*c**2 - 10*Ex*c**4 + 5*Ey*nu_xy*b**2*c**2 + 20*Ey*b**4 - 28*G*nu_xy*nu_yx*b**2*c**2 + 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (-5*Ey*b**2 + G*nu_xy*nu_yx*c**2 - G*c**2)/(5*b*c**2*(nu_xy*nu_yx - 1)), (Ex*c**2/2 - Ey*nu_xy*b**2/2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1))],
+                           [(-Ey*nu_xy*c**2/2 - Ey*b**2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), 4*(-5*Ey*b**2 + 2*G*nu_xy*nu_yx*c**2 - 2*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), Ey*nu_xy/(nu_xy*nu_yx - 1), (Ey*nu_xy*c**2/2 - Ey*b**2/2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), 2*(-5*Ey*b**2 - 4*G*nu_xy*nu_yx*c**2 + 4*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0, (Ey*b**2/2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (-5*Ey*b**2 + 2*G*nu_xy*nu_yx*c**2 - 2*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0, (5*Ey*b**2 - G*nu_xy*nu_yx*c**2 + G*c**2)/(5*b*c**2*(nu_xy*nu_yx - 1)), 2*(-5*Ey*b**2 - G*nu_xy*nu_yx*c**2 + G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0],
+                           [(Ex*nu_yx*b**2/2 + Ex*c**2 - G*nu_xy*nu_yx*b**2/5 + G*b**2/5)/(b**2*c*(nu_xy*nu_yx - 1)), Ex*nu_yx/(nu_xy*nu_yx - 1), 4*(-5*Ex*c**2 + 2*G*nu_xy*nu_yx*b**2 - 2*G*b**2)/(15*b*c*(nu_xy*nu_yx - 1)), (-5*Ex*c**2 + G*nu_xy*nu_yx*b**2 - G*b**2)/(5*b**2*c*(nu_xy*nu_yx - 1)), 0, 2*(-5*Ex*c**2 - G*nu_xy*nu_yx*b**2 + G*b**2)/(15*b*c*(nu_xy*nu_yx - 1)), -(Ex*c**2/2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), 0, (-5*Ex*c**2 + 2*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1)), (-Ex*nu_yx*b**2/2 + Ex*c**2/2 + G*nu_xy*nu_yx*b**2/5 - G*b**2/5)/(b**2*c*(nu_xy*nu_yx - 1)), 0, -(10*Ex*c**2 + 8*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1))],
+                           [(5*Ex*nu_yx*b**2*c**2 + 20*Ex*c**4 + 5*Ey*nu_xy*b**2*c**2 - 10*Ey*b**4 - 28*G*nu_xy*nu_yx*b**2*c**2 + 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (Ex*nu_yx*c**2/2 - Ey*b**2/2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (-5*Ex*c**2 + G*nu_xy*nu_yx*b**2 - G*b**2)/(5*b**2*c*(nu_xy*nu_yx - 1)), (-Ex*nu_yx*b**2*c**2/4 - Ex*c**4 - Ey*nu_xy*b**2*c**2/4 - Ey*b**4 + 7*G*nu_xy*nu_yx*b**2*c**2/5 - 7*G*b**2*c**2/5)/(b**3*c**3*(nu_xy*nu_yx - 1)), (-Ex*nu_yx*c**2/2 - Ey*b**2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (-Ex*c**2 - Ey*nu_xy*b**2/2 + G*nu_xy*nu_yx*b**2/5 - G*b**2/5)/(b**2*c*(nu_xy*nu_yx - 1)), (5*Ex*nu_yx*b**2*c**2 - 10*Ex*c**4 + 5*Ey*nu_xy*b**2*c**2 + 20*Ey*b**4 - 28*G*nu_xy*nu_yx*b**2*c**2 + 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (-5*Ey*b**2 + G*nu_xy*nu_yx*c**2 - G*c**2)/(5*b*c**2*(nu_xy*nu_yx - 1)), (-Ex*c**2/2 + Ey*nu_xy*b**2/2 - G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), (-5*Ex*nu_yx*b**2*c**2 + 10*Ex*c**4 - 5*Ey*nu_xy*b**2*c**2 + 10*Ey*b**4 + 28*G*nu_xy*nu_yx*b**2*c**2 - 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (-Ey*b**2/2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), -(Ex*c**2/2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1))],
+                           [(Ey*nu_xy*c**2/2 - Ey*b**2/2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), 2*(-5*Ey*b**2 - 4*G*nu_xy*nu_yx*c**2 + 4*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0, (-Ey*nu_xy*c**2/2 - Ey*b**2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), 4*(-5*Ey*b**2 + 2*G*nu_xy*nu_yx*c**2 - 2*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), -Ey*nu_xy/(nu_xy*nu_yx - 1), (5*Ey*b**2 - G*nu_xy*nu_yx*c**2 + G*c**2)/(5*b*c**2*(nu_xy*nu_yx - 1)), 2*(-5*Ey*b**2 - G*nu_xy*nu_yx*c**2 + G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0, (Ey*b**2/2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (-5*Ey*b**2 + 2*G*nu_xy*nu_yx*c**2 - 2*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0],
+                           [(5*Ex*c**2 - G*nu_xy*nu_yx*b**2 + G*b**2)/(5*b**2*c*(nu_xy*nu_yx - 1)), 0, 2*(-5*Ex*c**2 - G*nu_xy*nu_yx*b**2 + G*b**2)/(15*b*c*(nu_xy*nu_yx - 1)), (-Ex*nu_yx*b**2/2 - Ex*c**2 + G*nu_xy*nu_yx*b**2/5 - G*b**2/5)/(b**2*c*(nu_xy*nu_yx - 1)), -Ex*nu_yx/(nu_xy*nu_yx - 1), 4*(-5*Ex*c**2 + 2*G*nu_xy*nu_yx*b**2 - 2*G*b**2)/(15*b*c*(nu_xy*nu_yx - 1)), (Ex*nu_yx*b**2/2 - Ex*c**2/2 - G*nu_xy*nu_yx*b**2/5 + G*b**2/5)/(b**2*c*(nu_xy*nu_yx - 1)), 0, -(10*Ex*c**2 + 8*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1)), (Ex*c**2/2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), 0, (-5*Ex*c**2 + 2*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1))],
+                           [(-5*Ex*nu_yx*b**2*c**2 + 10*Ex*c**4 - 5*Ey*nu_xy*b**2*c**2 + 10*Ey*b**4 + 28*G*nu_xy*nu_yx*b**2*c**2 - 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (Ey*b**2/2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), -(Ex*c**2/2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), (5*Ex*nu_yx*b**2*c**2 - 10*Ex*c**4 + 5*Ey*nu_xy*b**2*c**2 + 20*Ey*b**4 - 28*G*nu_xy*nu_yx*b**2*c**2 + 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (5*Ey*b**2 - G*nu_xy*nu_yx*c**2 + G*c**2)/(5*b*c**2*(nu_xy*nu_yx - 1)), (-5*Ex*c**2 - 25*Ey*nu_xy*b**2 + 2*b**2*(15*Ey*nu_xy - G*nu_xy*nu_yx + G))/(10*b**2*c*(nu_xy*nu_yx - 1)), (-Ex*nu_yx*b**2*c**2/4 - Ex*c**4 - Ey*nu_xy*b**2*c**2/4 - Ey*b**4 + 7*G*nu_xy*nu_yx*b**2*c**2/5 - 7*G*b**2*c**2/5)/(b**3*c**3*(nu_xy*nu_yx - 1)), (Ex*nu_yx*c**2/2 + Ey*b**2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (-Ex*c**2 - Ey*nu_xy*b**2/2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), (5*Ex*nu_yx*b**2*c**2 + 20*Ex*c**4 + 5*Ey*nu_xy*b**2*c**2 - 10*Ey*b**4 - 28*G*nu_xy*nu_yx*b**2*c**2 + 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (-Ex*nu_yx*c**2/2 + Ey*b**2/2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (-Ex*c**2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1))],
+                           [(-Ey*b**2/2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (-5*Ey*b**2 + 2*G*nu_xy*nu_yx*c**2 - 2*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0, (-5*Ey*b**2 + G*nu_xy*nu_yx*c**2 - G*c**2)/(5*b*c**2*(nu_xy*nu_yx - 1)), 2*(-5*Ey*b**2 - G*nu_xy*nu_yx*c**2 + G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0, (Ey*nu_xy*c**2/2 + Ey*b**2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), 4*(-5*Ey*b**2 + 2*G*nu_xy*nu_yx*c**2 - 2*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), Ey*nu_xy/(nu_xy*nu_yx - 1), (-Ey*nu_xy*c**2/2 + Ey*b**2/2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), 2*(-5*Ey*b**2 - 4*G*nu_xy*nu_yx*c**2 + 4*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0],
+                           [(Ex*c**2/2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), 0, (-5*Ex*c**2 + 2*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1)), (Ex*nu_yx*b**2/2 - Ex*c**2/2 - G*nu_xy*nu_yx*b**2/5 + G*b**2/5)/(b**2*c*(nu_xy*nu_yx - 1)), 0, -(10*Ex*c**2 + 8*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1)), (-Ex*nu_yx*b**2/2 - Ex*c**2 + G*nu_xy*nu_yx*b**2/5 - G*b**2/5)/(b**2*c*(nu_xy*nu_yx - 1)), Ex*nu_yx/(nu_xy*nu_yx - 1), 4*(-5*Ex*c**2 + 2*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1)), (Ex*c**2 - G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), 0, -(10*Ex*c**2 + 2*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1))],
+                           [(5*Ex*nu_yx*b**2*c**2 - 10*Ex*c**4 + 5*Ey*nu_xy*b**2*c**2 + 20*Ey*b**4 - 28*G*nu_xy*nu_yx*b**2*c**2 + 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (5*Ey*b**2 - G*nu_xy*nu_yx*c**2 + G*c**2)/(5*b*c**2*(nu_xy*nu_yx - 1)), (5*Ex*c**2 + 25*Ey*nu_xy*b**2 - 2*b**2*(15*Ey*nu_xy - G*nu_xy*nu_yx + G))/(10*b**2*c*(nu_xy*nu_yx - 1)), (-5*Ex*nu_yx*b**2*c**2 + 10*Ex*c**4 - 5*Ey*nu_xy*b**2*c**2 + 10*Ey*b**4 + 28*G*nu_xy*nu_yx*b**2*c**2 - 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (Ey*b**2/2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (Ex*c**2/2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), (5*Ex*nu_yx*b**2*c**2 + 20*Ex*c**4 + 5*Ey*nu_xy*b**2*c**2 - 10*Ey*b**4 - 28*G*nu_xy*nu_yx*b**2*c**2 + 28*G*b**2*c**2)/(20*b**3*c**3*(nu_xy*nu_yx - 1)), (-Ex*nu_yx*c**2/2 + Ey*b**2/2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (Ex*c**2 - G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), (-Ex*nu_yx*b**2*c**2/4 - Ex*c**4 - Ey*nu_xy*b**2*c**2/4 - Ey*b**4 + 7*G*nu_xy*nu_yx*b**2*c**2/5 - 7*G*b**2*c**2/5)/(b**3*c**3*(nu_xy*nu_yx - 1)), (Ex*nu_yx*c**2/2 + Ey*b**2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (Ex*c**2 + Ey*nu_xy*b**2/2 - G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1))],
+                           [(-5*Ey*b**2 + G*nu_xy*nu_yx*c**2 - G*c**2)/(5*b*c**2*(nu_xy*nu_yx - 1)), 2*(-5*Ey*b**2 - G*nu_xy*nu_yx*c**2 + G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0, (-Ey*b**2/2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), (-5*Ey*b**2 + 2*G*nu_xy*nu_yx*c**2 - 2*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0, (-Ey*nu_xy*c**2/2 + Ey*b**2/2 + G*nu_xy*nu_yx*c**2/5 - G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), 2*(-5*Ey*b**2 - 4*G*nu_xy*nu_yx*c**2 + 4*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), 0, (Ey*nu_xy*c**2/2 + Ey*b**2 - G*nu_xy*nu_yx*c**2/5 + G*c**2/5)/(b*c**2*(nu_xy*nu_yx - 1)), 4*(-5*Ey*b**2 + 2*G*nu_xy*nu_yx*c**2 - 2*G*c**2)/(15*b*c*(nu_xy*nu_yx - 1)), -Ey*nu_xy/(nu_xy*nu_yx - 1)],
+                           [(-Ex*nu_yx*b**2/2 + Ex*c**2/2 + G*nu_xy*nu_yx*b**2/5 - G*b**2/5)/(b**2*c*(nu_xy*nu_yx - 1)), 0, -(10*Ex*c**2 + 8*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1)), -(Ex*c**2/2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), 0, (-5*Ex*c**2 + 2*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1)), (-Ex*c**2 + G*b**2*(nu_xy*nu_yx - 1)/5)/(b**2*c*(nu_xy*nu_yx - 1)), 0, -(10*Ex*c**2 + 2*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1)), (Ex*nu_yx*b**2/2 + Ex*c**2 - G*nu_xy*nu_yx*b**2/5 + G*b**2/5)/(b**2*c*(nu_xy*nu_yx - 1)), -Ex*nu_yx/(nu_xy*nu_yx - 1), 4*(-5*Ex*c**2 + 2*G*b**2*(nu_xy*nu_yx - 1))/(15*b*c*(nu_xy*nu_yx - 1))]])
+        
         # Calculate the stiffness of a weak spring for the drilling degree of freedom (rotation
         # about local z). We'll set the weak spring to be 1000 times weaker than any of the other
         # rotational stiffnesses in the matrix.
-        k_rz = (
-            min(
-                abs(k[1, 1]),
-                abs(k[2, 2]),
-                abs(k[4, 4]),
-                abs(k[5, 5]),
-                abs(k[7, 7]),
-                abs(k[8, 8]),
-                abs(k[10, 10]),
-                abs(k[11, 11]),
-            )
-            / 1000
-        )
+        ke_rz = min(abs(ke[1, 1]), abs(ke[2, 2]), abs(ke[4, 4]), abs(ke[5, 5]),
+                   abs(ke[7, 7]), abs(ke[8, 8]), abs(ke[10, 10]), abs(ke[11, 11])
+                   )/1000
 
         # The matrix currently only holds terms related to bending action. We need to expand it to
         # with placeholders for all the degrees of freedom so it can be directly added to the
         # membrane stiffness matrix later on.
 
         # Initialize the expanded stiffness matrix to all zeros
-        k_exp = zeros((24, 24))
+        ke_exp = zeros((24, 24))
 
         # Step through each term in the unexpanded stiffness matrix
 
@@ -912,51 +277,51 @@ class Plate3D:
 
             # j = Unexpanded matrix column
             for j in range(12):
-
+                
                 # Find the corresponding term in the expanded stiffness
                 # matrix
 
                 # m = Expanded matrix row
                 if i in [0, 3, 6, 9]:  # indices associated with deflection in z
-                    m = 2 * i + 2
+                    m = 2*i + 2
                 if i in [1, 4, 7, 10]:  # indices associated with rotation about x
-                    m = 2 * i + 1
+                    m = 2*i + 1
                 if i in [2, 5, 8, 11]:  # indices associated with rotation about y
-                    m = 2 * i
+                    m = 2*i
 
                 # n = Expanded matrix column
                 if j in [0, 3, 6, 9]:  # indices associated with deflection in z
-                    n = 2 * j + 2
+                    n = 2*j + 2
                 if j in [1, 4, 7, 10]:  # indices associated with rotation about x
-                    n = 2 * j + 1
+                    n = 2*j + 1
                 if j in [2, 5, 8, 11]:  # indices associated with rotation about y
-                    n = 2 * j
-
+                    n = 2*j
+                
                 # Ensure the indices are integers rather than floats
                 m, n = round(m), round(n)
 
                 # Add the term from the unexpanded matrix into the expanded
                 # matrix
-                k_exp[m, n] = k[i, j]
-
+                ke_exp[m, n] = ke[i, j]
+        
         # Add the drilling degree of freedom's weak spring
-        k_exp[5, 5] = k_rz
-        k_exp[11, 11] = k_rz
-        k_exp[17, 17] = k_rz
-        k_exp[23, 23] = k_rz
-
+        ke_exp[5, 5] = ke_rz
+        ke_exp[11, 11] = ke_rz
+        ke_exp[17, 17] = ke_rz
+        ke_exp[23, 23] = ke_rz
+        
         # Return the local stiffness matrix
-        return k_exp
+        return ke_exp
 
-    def f(self, combo_name: str = "Combo 1") -> NDArray[float64]:
+    def f(self, combo_name: str = 'Combo 1') -> NDArray[float64]:
         """
         Returns the plate's local end force vector
         """
-
+        
         # Calculate and return the plate's local end force vector
-        return add(matmul(self.k(), self.d(combo_name)), self.fer(combo_name))
+        return add(matmul(self.ke(), self.d(combo_name)), self.fer(combo_name))
 
-    def fer(self, combo_name: str = "Combo 1") -> NDArray[float64]:
+    def fer(self, combo_name: str = 'Combo 1') -> NDArray[float64]:
         """
         Returns the rectangle's local fixed end reaction vector.
 
@@ -965,7 +330,7 @@ class Plate3D:
         combo_name : string
             The name of the load combination to get the load vector for.
         """
-
+        
         # Initialize the fixed end reaction vector
         fer = zeros((12, 1))
 
@@ -974,8 +339,8 @@ class Plate3D:
 
         # Initialize the element's surface pressure to zero
         p = 0
-
-        # Loop through each load case and factor in the load combination
+        
+        # Loop through each load case and factor in the load combination 
         for case, factor in combo.factors.items():
 
             # Sum the pressures
@@ -985,33 +350,12 @@ class Plate3D:
                 if pressure[1] == case:
 
                     # Sum the pressures multiplied by their load factors
-                    p += factor * pressure[0]
-
-        b = self.width() / 2
-        c = self.height() / 2
-
-        fer = (
-            -4
-            * p
-            * c
-            * b
-            * array(
-                [
-                    [1 / 4],
-                    [c / 12],
-                    [-b / 12],
-                    [1 / 4],
-                    [c / 12],
-                    [b / 12],
-                    [1 / 4],
-                    [-c / 12],
-                    [b / 12],
-                    [1 / 4],
-                    [-c / 12],
-                    [-b / 12],
-                ]
-            )
-        )
+                    p += factor*pressure[0]
+        
+        b = self.width()/2
+        c = self.height()/2
+        
+        fer = -4*p*c*b*array([[1/4], [c/12], [-b/12], [1/4], [c/12], [b/12], [1/4], [-c/12], [b/12], [1/4], [-c/12], [-b/12]])
 
         # At this point `fer` only contains terms for the degrees of freedom
         # associated with membrane action. Expand `fer` to include zero terms for
@@ -1029,17 +373,17 @@ class Plate3D:
         # Step through each term in the unexpanded vector
         # i = Unexpanded vector row
         for i in range(12):
-
+                
             # Find the corresponding term in the expanded vector
 
             # m = Expanded vector row
-            if i in [0, 3, 6, 9]:  # indices associated with deflection in z
-                m = 2 * i + 2
+            if i in [0, 3, 6, 9]:   # indices associated with deflection in z
+                m = 2*i + 2
             if i in [1, 4, 7, 10]:  # indices associated with rotation about x
-                m = 2 * i + 1
+                m = 2*i + 1
             if i in [2, 5, 8, 11]:  # indices associated with rotation about y
-                m = 2 * i
-
+                m = 2*i
+                
             # Ensure the index is an integer rather than a float
             m = round(m)
 
@@ -1047,16 +391,16 @@ class Plate3D:
             fer_exp[m, 0] = fer[i, 0]
 
         return fer_exp
+        
+    def d(self, combo_name: str = 'Combo 1') -> NDArray[float64]:
+       """
+       Returns the plate's local displacement vector
+       """
 
-    def d(self, combo_name: str = "Combo 1") -> NDArray[float64]:
-        """
-        Returns the plate's local displacement vector
-        """
+       # Calculate and return the local displacement vector
+       return matmul(self.T(), self.D(combo_name))
 
-        # Calculate and return the local displacement vector
-        return matmul(self.T(), self.D(combo_name))
-
-    def F(self, combo_name: str = "Combo 1") -> NDArray[float64]:
+    def F(self, combo_name: str = 'Combo 1') -> NDArray[float64]:
         """
         Returns the plate's global nodal force vector
         """
@@ -1064,14 +408,14 @@ class Plate3D:
         # Calculate and return the global force vector
         return matmul(inv(self.T()), self.f(combo_name))
 
-    def D(self, combo_name: str = "Combo 1") -> NDArray[float64]:
+    def D(self, combo_name: str = 'Combo 1') -> NDArray[float64]:
         """
         Returns the plate's global displacement vector for the given load combination.
         """
-
+        
         # Initialize the displacement vector
         D = zeros((24, 1))
-
+        
         # Read in the global displacements from the nodes
         D[0, 0] = self.i_node.DX[combo_name]
         D[1, 0] = self.i_node.DY[combo_name]
@@ -1100,10 +444,10 @@ class Plate3D:
         D[21, 0] = self.n_node.RX[combo_name]
         D[22, 0] = self.n_node.RY[combo_name]
         D[23, 0] = self.n_node.RZ[combo_name]
-
+        
         # Return the global displacement vector
         return D
-
+ 
     def T(self) -> NDArray[float64]:
         """
         Returns the plate's transformation matrix
@@ -1118,8 +462,8 @@ class Plate3D:
         zi = self.i_node.Z
         zj = self.j_node.Z
         x = [(xj - xi), (yj - yi), (zj - zi)]
-        x = x / norm(x)
-
+        x = x/norm(x)
+        
         # The local y-axis will be in the plane of the plate
         # Find a vector in the plate's local xy plane
         xn = self.n_node.X
@@ -1129,19 +473,19 @@ class Plate3D:
 
         # Find a vector perpendicular to the plate surface to get the orientation of the local z-axis
         z = cross(x, xy)
-
+        
         # Divide the vector by its magnitude to produce a unit z-vector of direction cosines
-        z = z / norm(z)
+        z = z/norm(z)
 
         # Calculate the local y-axis as a vector perpendicular to the local z and x-axes
         y = cross(z, x)
-
+        
         # Divide the z-vector by its magnitude to produce a unit vector of direction cosines
-        y = y / norm(y)
+        y = y/norm(y)
 
         # Create the direction cosines matrix
         dirCos = array([x, y, z])
-
+        
         # Build the transformation matrix
         transMatrix = zeros((24, 24))
         transMatrix[0:3, 0:3] = dirCos
@@ -1152,18 +496,18 @@ class Plate3D:
         transMatrix[15:18, 15:18] = dirCos
         transMatrix[18:21, 18:21] = dirCos
         transMatrix[21:24, 21:24] = dirCos
-
+        
         return transMatrix
 
-    def K(self) -> NDArray[float64]:
+    def Ke(self) -> NDArray[float64]:
         """
-        Returns the plate's global stiffness matrix
+        Returns the plate's global elastic stiffness matrix.
         """
 
         # Calculate and return the stiffness matrix in global coordinates
-        return matmul(matmul(inv(self.T()), self.k()), self.T())
+        return matmul(matmul(inv(self.T()), self.ke()), self.T())
 
-    def FER(self, combo_name: str = "Combo 1") -> NDArray[float64]:
+    def FER(self, combo_name: str = 'Combo 1') -> NDArray[float64]:
         """
         Returns the global fixed end reaction vector.
 
@@ -1173,7 +517,7 @@ class Plate3D:
             The name of the load combination to calculate the fixed end
             reaction vector for (not the load combination itself).
         """
-
+        
         # Calculate and return the fixed end reaction vector
         return matmul(inv(self.T()), self.fer(combo_name))
 
@@ -1193,179 +537,22 @@ class Plate3D:
         yn = ym
 
         # Calculate the [C] coefficient matrix
-        C = array(
-            [
-                [
-                    1,
-                    xi,
-                    yi,
-                    xi**2,
-                    xi * yi,
-                    yi**2,
-                    xi**3,
-                    xi**2 * yi,
-                    xi * yi**2,
-                    yi**3,
-                    xi**3 * yi,
-                    xi * yi**3,
-                ],
-                [
-                    0,
-                    0,
-                    1,
-                    0,
-                    xi,
-                    2 * yi,
-                    0,
-                    xi**2,
-                    2 * xi * yi,
-                    3 * yi**2,
-                    xi**3,
-                    3 * xi * yi**2,
-                ],
-                [
-                    0,
-                    -1,
-                    0,
-                    -2 * xi,
-                    -yi,
-                    0,
-                    -3 * xi**2,
-                    -2 * xi * yi,
-                    -(yi**2),
-                    0,
-                    -3 * xi**2 * yi,
-                    -(yi**3),
-                ],
-                [
-                    1,
-                    xj,
-                    yj,
-                    xj**2,
-                    xj * yj,
-                    yj**2,
-                    xj**3,
-                    xj**2 * yj,
-                    xj * yj**2,
-                    yj**3,
-                    xj**3 * yj,
-                    xj * yj**3,
-                ],
-                [
-                    0,
-                    0,
-                    1,
-                    0,
-                    xj,
-                    2 * yj,
-                    0,
-                    xj**2,
-                    2 * xj * yj,
-                    3 * yj**2,
-                    xj**3,
-                    3 * xj * yj**2,
-                ],
-                [
-                    0,
-                    -1,
-                    0,
-                    -2 * xj,
-                    -yj,
-                    0,
-                    -3 * xj**2,
-                    -2 * xj * yj,
-                    -(yj**2),
-                    0,
-                    -3 * xj**2 * yj,
-                    -(yj**3),
-                ],
-                [
-                    1,
-                    xm,
-                    ym,
-                    xm**2,
-                    xm * ym,
-                    ym**2,
-                    xm**3,
-                    xm**2 * ym,
-                    xm * ym**2,
-                    ym**3,
-                    xm**3 * ym,
-                    xm * ym**3,
-                ],
-                [
-                    0,
-                    0,
-                    1,
-                    0,
-                    xm,
-                    2 * ym,
-                    0,
-                    xm**2,
-                    2 * xm * ym,
-                    3 * ym**2,
-                    xm**3,
-                    3 * xm * ym**2,
-                ],
-                [
-                    0,
-                    -1,
-                    0,
-                    -2 * xm,
-                    -ym,
-                    0,
-                    -3 * xm**2,
-                    -2 * xm * ym,
-                    -(ym**2),
-                    0,
-                    -3 * xm**2 * ym,
-                    -(ym**3),
-                ],
-                [
-                    1,
-                    xn,
-                    yn,
-                    xn**2,
-                    xn * yn,
-                    yn**2,
-                    xn**3,
-                    xn**2 * yn,
-                    xn * yn**2,
-                    yn**3,
-                    xn**3 * yn,
-                    xn * yn**3,
-                ],
-                [
-                    0,
-                    0,
-                    1,
-                    0,
-                    xn,
-                    2 * yn,
-                    0,
-                    xn**2,
-                    2 * xn * yn,
-                    3 * yn**2,
-                    xn**3,
-                    3 * xn * yn**2,
-                ],
-                [
-                    0,
-                    -1,
-                    0,
-                    -2 * xn,
-                    -yn,
-                    0,
-                    -3 * xn**2,
-                    -2 * xn * yn,
-                    -(yn**2),
-                    0,
-                    -3 * xn**2 * yn,
-                    -(yn**3),
-                ],
-            ]
-        )
+        C = array([[1, xi, yi, xi**2, xi*yi, yi**2, xi**3, xi**2*yi, xi*yi**2, yi**3, xi**3*yi, xi*yi**3],
+                    [0, 0, 1, 0, xi, 2*yi, 0, xi**2, 2*xi*yi, 3*yi**2, xi**3, 3*xi*yi**2],
+                    [0, -1, 0, -2*xi, -yi, 0, -3*xi**2, -2*xi*yi, -yi**2, 0, -3*xi**2*yi, -yi**3],
+                    
+                    [1, xj, yj, xj**2, xj*yj, yj**2, xj**3, xj**2*yj, xj*yj**2, yj**3, xj**3*yj, xj*yj**3],
+                    [0, 0, 1, 0, xj, 2*yj, 0, xj**2, 2*xj*yj, 3*yj**2, xj**3, 3*xj*yj**2],
+                    [0, -1, 0, -2*xj, -yj, 0, -3*xj**2, -2*xj*yj, -yj**2, 0, -3*xj**2*yj, -yj**3],
 
+                    [1, xm, ym, xm**2, xm*ym, ym**2, xm**3, xm**2*ym, xm*ym**2, ym**3, xm**3*ym, xm*ym**3],
+                    [0, 0, 1, 0, xm, 2*ym, 0, xm**2, 2*xm*ym, 3*ym**2, xm**3, 3*xm*ym**2],
+                    [0, -1, 0, -2*xm, -ym, 0, -3*xm**2, -2*xm*ym, -ym**2, 0, -3*xm**2*ym, -ym**3],
+
+                    [1, xn, yn, xn**2, xn*yn, yn**2, xn**3, xn**2*yn, xn*yn**2, yn**3, xn**3*yn, xn*yn**3],
+                    [0, 0, 1, 0, xn, 2*yn, 0, xn**2, 2*xn*yn, 3*yn**2, xn**3, 3*xn*yn**2],
+                    [0, -1, 0, -2*xn, -yn, 0, -3*xn**2, -2*xn*yn, -yn**2, 0, -3*xn**2*yn, -yn**3]])
+        
         # Return the coefficient matrix
         return C
 
@@ -1376,18 +563,14 @@ class Plate3D:
         """
 
         # Calculate the [Q] coefficient matrix
-        Q = array(
-            [
-                [0, 0, 0, -2, 0, 0, -6 * x, -2 * y, 0, 0, -6 * x * y, 0],
-                [0, 0, 0, 0, 0, -2, 0, 0, -2 * x, -6 * y, 0, -6 * x * y],
-                [0, 0, 0, 0, -2, 0, 0, -4 * x, -4 * y, 0, -6 * x**2, -6 * y**2],
-            ]
-        )
-
+        Q =  array([[0, 0, 0, -2, 0, 0, -6*x, -2*y, 0, 0, -6*x*y, 0],
+                    [0, 0, 0, 0, 0, -2, 0, 0, -2*x, -6*y, 0, -6*x*y],
+                    [0, 0, 0, 0, -2, 0, 0, -4*x, -4*y, 0, -6*x**2, -6*y**2]])
+ 
         # Return the [Q] coefficient matrix
         return Q
 
-    def _a(self, combo_name: str = "Combo 1") -> NDArray[float64]:
+    def _a(self, combo_name: str = 'Combo 1') -> NDArray[float64]:
         """
         Returns the vector of plate bending constants for the displacement function.
 
@@ -1404,9 +587,7 @@ class Plate3D:
         # Return the plate bending constants
         return inv(self._C()) @ d
 
-    def moment(
-        self, x: float, y: float, local: bool = True, combo_name: str = "Combo 1"
-    ) -> NDArray[float64]:
+    def moment(self, x: float, y: float, local: bool = True, combo_name: str = 'Combo 1') -> NDArray[float64]:
         """
         Returns the internal moments (Mx, My, and Mxy) at any point (x, y) in the plate's local
         coordinate system
@@ -1421,15 +602,13 @@ class Plate3D:
             The name of the load combination to evaluate. The default is 'Combo 1'.
 
         """
-
+        
         # Calculate and return internal moments
         # A negative sign will be applied to change the sign convention to match that of
         # Pynite's quadrilateral elements.
         return -self.Db() @ self._Q(x, y) @ self._a(combo_name)
-
-    def shear(
-        self, x: float, y: float, local: bool = True, combo_name: str = "Combo 1"
-    ) -> NDArray[float64]:
+ 
+    def shear(self, x: float, y: float, local: bool = True, combo_name: str = 'Combo 1') -> NDArray[float64]:
         """
         Returns the internal shears (Qx and Qy) at any point (x, y) in the plate's local
         coordinate system
@@ -1450,97 +629,53 @@ class Plate3D:
         a = self._a(combo_name)
 
         # Calculate the derivatives of the plate moments needed to compute shears
-        dMx_dx = (
-            Db
-            @ array(
-                [
-                    [0, 0, 0, 0, 0, 0, -6, 0, 0, 0, -6 * y, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, -2, 0, 0, -6 * y],
-                    [0, 0, 0, 0, 0, 0, 0, -4, 0, 0, -12 * x, 0],
-                ]
-            )
-            @ a
-        )[0]
+        dMx_dx = (Db @ array([[0, 0, 0, 0, 0, 0, -6, 0, 0, 0, -6*y, 0],
+                             [0, 0, 0, 0, 0, 0, 0, 0, -2, 0, 0, -6*y],
+                             [0, 0, 0, 0, 0, 0, 0, -4, 0, 0, -12*x, 0]]) @ a)[0]
 
-        dMxy_dy = (
-            Db
-            @ array(
-                [
-                    [0, 0, 0, 0, 0, 0, 0, -2, 0, 0, -6 * x, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, -6, 0, -6 * x],
-                    [0, 0, 0, 0, 0, 0, 0, 0, -4, 0, 0, -12 * y],
-                ]
-            )
-            @ a
-        )[2]
+        dMxy_dy = (Db @ array([[0, 0, 0, 0, 0, 0, 0, -2, 0, 0, -6*x, 0],
+                              [0, 0, 0, 0, 0, 0, 0, 0, 0, -6, 0, -6*x],
+                              [0, 0, 0, 0, 0, 0, 0, 0, -4, 0, 0, -12*y]]) @ a)[2]
+        
+        dMy_dy = (Db @ array([[0, 0, 0, 0, 0, 0, 0, -2, 0, 0, -6*x, 0],
+                             [0, 0, 0, 0, 0, 0, 0, 0, 0, -6, 0, -6*x],
+                             [0, 0, 0, 0, 0, 0, 0, 0, -4, 0, 0, -12*y]]) @ a)[1]
 
-        dMy_dy = (
-            Db
-            @ array(
-                [
-                    [0, 0, 0, 0, 0, 0, 0, -2, 0, 0, -6 * x, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, -6, 0, -6 * x],
-                    [0, 0, 0, 0, 0, 0, 0, 0, -4, 0, 0, -12 * y],
-                ]
-            )
-            @ a
-        )[1]
-
-        dMxy_dx = (
-            Db
-            @ array(
-                [
-                    [0, 0, 0, 0, 0, 0, -6, 0, 0, 0, -6 * y, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, -2, 0, 0, -6 * y],
-                    [0, 0, 0, 0, 0, 0, 0, -4, 0, 0, -12 * x, 0],
-                ]
-            )
-            @ a
-        )[2]
-
+        dMxy_dx = (Db @ array([[0, 0, 0, 0, 0, 0, -6, 0, 0, 0, -6*y, 0],
+                              [0, 0, 0, 0, 0, 0, 0, 0, -2, 0, 0, -6*y],
+                              [0, 0, 0, 0, 0, 0, 0, -4, 0, 0, -12*x, 0]]) @ a)[2]
+        
         # Calculate internal shears
         Qx = (dMx_dx + dMxy_dy)[0]
         Qy = (dMy_dy + dMxy_dx)[0]
 
         # Return internal shears
-        return array([[Qx], [Qy]])
+        return array([[Qx], 
+                      [Qy]])
 
-    def membrane(
-        self, x: float, y: float, local: bool = True, combo_name: str = "Combo 1"
-    ) -> NDArray[float64]:
-
+    def membrane(self, x: float, y: float, local: bool = True, combo_name: str = 'Combo 1') -> NDArray[float64]:
+        
         # Convert the (x, y) coordinates to (r, x) coordinates
-        r = -1 + 2 * x / self.width()
-        s = -1 + 2 * y / self.height()
+        r = -1 + 2*x/self.width()
+        s = -1 + 2*y/self.height()
 
         # Get the plate's local displacement vector
         # Slice out terms not related to membrane forces
         d = self.d(combo_name)[[0, 1, 6, 7, 12, 13, 18, 19], :]
 
         # Define the gauss point used for numerical integration
-        gp = 1 / 3**0.5
+        gp = 1/3**0.5
 
         # Define extrapolated r and s points
-        r_ex = r / gp
-        s_ex = s / gp
+        r_ex = r/gp
+        s_ex = s/gp
 
         # Define the interpolation functions
-        H = (
-            1
-            / 4
-            * array(
-                [
-                    (1 - r_ex) * (1 - s_ex),
-                    (1 + r_ex) * (1 - s_ex),
-                    (1 + r_ex) * (1 + s_ex),
-                    (1 - r_ex) * (1 + s_ex),
-                ]
-            )
-        )
+        H = 1/4*array([(1 - r_ex)*(1 - s_ex), (1 + r_ex)*(1 - s_ex), (1 + r_ex)*(1 + s_ex), (1 - r_ex)*(1 + s_ex)])
 
         # Get the stress-strain matrix
         Dm = self.Dm()
-
+        
         # Calculate the internal stresses [Sx, Sy, Txy] at each gauss point
         s1 = matmul(Dm, matmul(self.B_m(-gp, -gp), d))
         s2 = matmul(Dm, matmul(self.B_m(gp, -gp), d))
@@ -1548,65 +683,10 @@ class Plate3D:
         s4 = matmul(Dm, matmul(self.B_m(-gp, gp), d))
 
         # Extrapolate to get the value at the requested location
-        Sx = H[0] * s1[0] + H[1] * s2[0] + H[2] * s3[0] + H[3] * s4[0]
-        Sy = H[0] * s1[1] + H[1] * s2[1] + H[2] * s3[1] + H[3] * s4[1]
-        Txy = H[0] * s1[2] + H[1] * s2[2] + H[2] * s3[2] + H[3] * s4[2]
+        Sx = H[0]*s1[0] + H[1]*s2[0] + H[2]*s3[0] + H[3]*s4[0]
+        Sy = H[0]*s1[1] + H[1]*s2[1] + H[2]*s3[1] + H[3]*s4[1]
+        Txy = H[0]*s1[2] + H[1]*s2[2] + H[2]*s3[2] + H[3]*s4[2]
 
-        return array([Sx, Sy, Txy])
-
-    def M(self) -> NDArray[float64]:
-        """Returns the plate element's global mass matrix using consistent mass matrix approach.
-
-        :return: The global mass matrix for the plate element.
-        :rtype: array
-        """
-        # Get material properties
-        rho = (
-            self.model.materials[self.material_name].rho
-            if hasattr(self, "material_name")
-            else 2400.0
-        )  # Default concrete density
-
-        # For a plate element, we need to integrate the mass matrix over the element area
-        # Using a simplified approach based on the element area and thickness
-
-        # Calculate element area (for rectangular plate)
-        # Width and height methods should be available in the plate class
-        width = self.width()
-        height = self.height()
-        total_area = width * height
-
-        # Calculate total mass of the element
-        total_mass = rho * total_area * self.t
-
-        # Create a consistent mass matrix for a rectangular plate element
-        # This is a simplified lumped mass approach
-
-        # Mass per node (assuming uniform distribution)
-        mass_per_node = total_mass / 4.0
-
-        # Rotational inertia terms (simplified)
-        rot_inertia = total_mass * (self.t**2) / 12.0 / 4.0  # Distributed among nodes
-
-        # Initialize mass matrix (24x24 for 4 nodes with 6 DOF each)
-        m = zeros((24, 24))
-
-        # Add mass terms for each node
-        for i in range(4):
-            base_idx = i * 6
-
-            # Translational mass terms
-            m[base_idx + 0, base_idx + 0] = mass_per_node  # X translation
-            m[base_idx + 1, base_idx + 1] = mass_per_node  # Y translation
-            m[base_idx + 2, base_idx + 2] = mass_per_node  # Z translation
-
-            # Rotational mass terms (simplified)
-            m[base_idx + 3, base_idx + 3] = rot_inertia  # X rotation
-            m[base_idx + 4, base_idx + 4] = rot_inertia  # Y rotation
-            m[base_idx + 5, base_idx + 5] = rot_inertia  # Z rotation
-
-        # Transform to global coordinates
-        T = self.T()
-        M_global = inv(T) @ m @ T
-
-        return M_global
+        return array([Sx,
+                      Sy,
+                      Txy])

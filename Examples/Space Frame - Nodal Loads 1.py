@@ -5,7 +5,7 @@
 
 # Import 'FEModel3D' and 'Visualization' from 'Pynite'
 from Pynite import FEModel3D
-from Pynite.Rendering import Renderer
+from Pynite.Visualization import Renderer
 
 # Create a new model
 frame = FEModel3D()
@@ -48,10 +48,10 @@ frame.analyze(check_statics=True)
 
 # Render the deformed shape
 rndr = Renderer(frame)
-rndr.annotation_size = 5
 rndr.render_loads = True
 rndr.deformed_shape = True
 rndr.deformed_scale = 100
+rndr.member_diagrams = 'My'
 rndr.render_model()
 
 # Print the node 1 displacements

@@ -2811,7 +2811,7 @@ class FEModel3D():
         # Flag the model as solved
         self.solution = 'P-Delta'
 
-    def analyze_modal(self, num_modes: int = 12, mass_combo_name: str = 'Combo 1', mass_direction: str = 'Y', gravity: float = 1.0, log=False, check_stability=True):
+    def analyze_modal(self, num_modes: int = 12, mass_combo_name: str = 'Combo 1', mass_direction: str = 'Y', gravity: float = 1.0, log=False, check_stability=True, include_pdelta: bool = False):
         """
         Performs modal analysis to determine natural frequencies and mode shapes.
 
@@ -2851,6 +2851,20 @@ class FEModel3D():
 
         # Assemble and partition the global stiffness matrix
         Ke_global = self.Ke(mass_combo_name, log, check_stability, sparse=True).tocsr()
+
+        # Optionally include geometric (P-Delta) stiffness so the modal solution
+        # reflects gravity softening. First establish converged member axial forces
+        # under the mass/gravity combo (P-Delta static solve), then add the geometric
+        # stiffness. Pynite tangent convention is K = Ke + Kg, with Kg's sign carried
+        # by the axial force (compression softens the structure -> longer periods).
+        if include_pdelta:
+            if log:
+                print('- Including geometric (P-Delta) stiffness in modal solution')
+            FER1, FER2 = Analysis._partition(self, self.FER(mass_combo_name), D1_indices, D2_indices)
+            P1, P2 = Analysis._partition(self, self.P(mass_combo_name), D1_indices, D2_indices)
+            Analysis._PDelta(self, mass_combo_name, P1, FER1, D1_indices, D2_indices, D2, log, True, check_stability, 30)
+            Kg_global = self.Kg(mass_combo_name, log, sparse=True, first_step=False).tocsr()
+            Ke_global = (Ke_global + Kg_global).tocsr()
 
         # Partition to remove supported DOFs
         K11, K12, K21, K22 = Analysis._partition(self, Ke_global, D1_indices, D2_indices)
